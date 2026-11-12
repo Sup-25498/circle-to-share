@@ -19,7 +19,7 @@ Or grab the APK from the [latest release](https://github.com/woshicado/circle-to
 
 <p>
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Circle what you want" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="Adjust, then share or copy" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="Adjust, then share, copy or save" />
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="QR codes are spotted for you" />
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="24%" alt="Make it work your way" />
 </p>
@@ -30,16 +30,20 @@ only **Save** puts it in your gallery (`Pictures/Screenshots`).
 
 The loop's outline becomes a crop box you can resize and reposition. Prefer dragging a rectangle directly? Turn off **Circle to crop** in the app.
 
-**Scrollshots** (experimental): switch on **Scrollshot support** in the app and the crop tool gains **More above** and **More below**. The step size and a (best-effort) removal of scrollbar handles can be set. Needs the accessibility service, which performs the scroll as an injected swipe.
+**Scrollshots**: switch on **Scrollshot support** in the app and the crop tool gains **More above** and **More below**. The step size and a (best-effort) removal of scrollbar handles can be set. Needs the accessibility service, which performs the scroll as an injected swipe.
+
+**Copy text**: a button beside **Copy** puts the text of your selection in the clipboard.
 
 ## Triggering it
 
-Use any of these:
+Use any of these (anything not assistant-powered will need the accessibility fallback):
 
 - **Power button (press & hold)** — works via the digital-assistant role.
 - **Swipe up from a bottom corner** — another way to invoke the digital assistant, if enabled in your system settings.
-- **Quick Settings tile** — add it with the **Add Quick Settings tile** button in the app (Android 13+), or by hand: pull down the shade → edit (pencil) → drag the *Circle to Share* tile in. Tapping it collapses the shade and captures what was behind it. Needs the accessibility fallback — without it the tile explains itself and opens the app.
+- **Quick Settings tile** — add it with the **Add Quick Settings tile** button in the app (Android 13+), or by hand: pull down the shade → edit (pencil) → drag the *Circle to Share* tile in. Tapping it collapses the shade and captures what was behind it.
 - **Floating bubble** — an optional, always-on-screen draggable button (toggle in the app). Tap it to capture from any app; long-press to open the app.
+- **App shortcut** — long-press the app icon → *Capture*, or pin it to the home screen.
+- **Automation apps** (Tasker, MacroDroid, …) — pick the *Capture the screen* shortcut, or start an activity with the action `eu.woshicado.circletoshare.CAPTURE`.
 - _Or any other way that starts your digital assistant_
 
 ## How it works
@@ -47,10 +51,12 @@ Use any of these:
 - The app registers as a **digital assistant** (`VoiceInteractionService`). Whatever launches the assistant — a press-and-hold of the power button, or a swipe up from a bottom corner — now opens the crop overlay instead of the previous assistant.
 - The system hands assistants a screenshot of the current screen (`onHandleScreenshot`). On devices/ROMs that don't provide it to third-party assistants, an **accessibility service** (`AccessibilityService.takeScreenshot`) captures instead.
 - The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
+- From Android 15 the tile hands SystemUI an activity to start on a tap (`Tile.setActivityLaunchForClick`), which closes the shade itself. The app shortcut and automation apps start a similar activity (`CaptureTriggerActivity`, exported, action `eu.woshicado.circletoshare.CAPTURE`) that does not send a close shade event first.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
 - **Save** adds the crop to `Pictures/Screenshots` through `MediaStore`, which needs no storage permission either.
-- **Scrollshots** (experimental): "More above" / "More below" ask the accessibility service to scroll the app underneath by an injected drag (`dispatchGesture`), take another screenshot and join it onto the picture by comparing rows of the two frames. A list of installed apps for per-app settings is read on the device when opening the per-app settings page.
-- **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture, solely to align the crop box — nothing is stored or transmitted. This is why the accessibility service declares the "retrieve window content" capability; leave the toggle off and the bounds are never read at all.
+- **Scrollshots**: "More above" / "More below" ask the accessibility service to scroll the app underneath by an injected drag (`dispatchGesture`), take another screenshot and join it onto the picture by comparing rows of the two frames. A list of installed apps for per-app settings is read on the device when opening the per-app settings page.
+- **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture.
+- **Copy text** (experimental): while enabled, at the moment of capture, the *text* of the app windows on screen is read from the accessibility node tree and kept in memory while the crop tool is open. Tapping **Copy text** additionally runs OCR (PaddleOCR; on-device) over the selection.
 
 ## Build & install
 

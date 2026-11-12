@@ -13,8 +13,12 @@ object Prefs {
     private const val KEY_SNAP = "snap_to_content"
     private const val KEY_SNAP_EDGES = "snap_to_edges"
     private const val KEY_QR = "qr_detect"
+    private const val KEY_COPY_TEXT = "copy_text"
+    private const val KEY_COPY_TEXT_MARKDOWN = "copy_text_markdown"
     private const val KEY_QR_COLOR = "qr_color"
     private const val KEY_A11Y_CONSENT = "a11y_consent"
+    private const val KEY_A11Y_TEXT_CONSENT = "a11y_text_consent"
+    private const val KEY_A11Y_TEXT_ASKED = "a11y_text_asked"
     private const val KEY_CAPTURE_MORE = "capture_more"
     private const val KEY_TRIGGERS_EXPANDED = "triggers_expanded"
     private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
@@ -73,6 +77,33 @@ object Prefs {
     fun setAccessibilityConsent(context: Context, granted: Boolean) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_A11Y_CONSENT, granted).apply()
+    }
+
+    /**
+     * True once the user has agreed to the disclosure as it stands since
+     * "Copy text": that the service also reads the text on screen at the
+     * moment of a capture. Agreeing to the disclosure before it said so
+     * ([hasAccessibilityConsent] alone) doesn't cover it — those users are
+     * asked again, and until then "Copy text" reads the picture instead.
+     */
+    fun hasTextConsent(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_A11Y_TEXT_CONSENT, false)
+
+    fun setTextConsent(context: Context, granted: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_A11Y_TEXT_CONSENT, granted).apply()
+    }
+
+    /** Whether the updated disclosure was put to someone who had agreed to
+     *  the one before ([hasTextConsent]): it is, once. */
+    fun wasTextConsentAsked(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_A11Y_TEXT_ASKED, false)
+
+    fun setTextConsentAsked(context: Context) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_A11Y_TEXT_ASKED, true).apply()
     }
 
     /** True = draw a freeform circle (default); false = drag a rectangle. */
@@ -150,9 +181,7 @@ object Prefs {
     }
 
     /** True = the crop tool offers scrollshots: the "More above" and "More
-     *  below" buttons (EXPERIMENTAL; needs the accessibility service). Off by
-     *  default: who has them has switched them on, and been told then what
-     *  experimental means (see ExperimentalNoticeDialog). */
+     *  below" buttons (needs the accessibility service). Off by default. */
     fun isCaptureMoreEnabled(context: Context): Boolean =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_CAPTURE_MORE, false)
@@ -238,6 +267,29 @@ object Prefs {
     fun setTriggersExpanded(context: Context, expanded: Boolean) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_TRIGGERS_EXPANDED, expanded).apply()
+    }
+
+    /** "Copy text": the button, and with it the reading of the screen's
+     *  text at capture and the OCR models. Off by default: it is
+     *  experimental, and switching it on shows the ExperimentalNoticeDialog. */
+    fun isCopyTextEnabled(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_COPY_TEXT, false)
+
+    fun setCopyTextEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_COPY_TEXT, enabled).apply()
+    }
+
+    /** Whether Copy text formats what it copies as Markdown (and HTML), or
+     *  copies plain text. On by default. */
+    fun isCopyTextMarkdown(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_COPY_TEXT_MARKDOWN, true)
+
+    fun setCopyTextMarkdown(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_COPY_TEXT_MARKDOWN, enabled).apply()
     }
 
     /** True = scan each capture for QR codes and highlight them (default on).

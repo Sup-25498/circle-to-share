@@ -34,8 +34,8 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 30
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.3.7"
+        versionCode = 18
+        versionName = "0.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -86,6 +86,19 @@ android {
             } else {
                 logger.warn("No release keystore configured — release APK is unsigned.")
             }
+        }
+    }
+
+    // The OCR models are memory-mapped straight out of the APK.
+    androidResources {
+        noCompress += "tflite"
+    }
+
+    // TensorFlow Lite's native code for four ABIs, compressed in the APK (and
+    // unpacked once at install): ~9 MB less to download.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
@@ -171,6 +184,11 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.1.0")
     // Pure-Java QR decoding. No native libs, no Play Services, and offline
     implementation("com.google.zxing:core:3.5.3")
+    // OCR for "Copy text" (models in assets/ocr): LiteRT, TensorFlow Lite's
+    // successor (Google's Maven repository; Apache 2.0). Its native code is
+    // 16 KB page aligned, which Play requires; the last TensorFlow Lite on
+    // Maven Central (2.16.1) is not. ~1.5–2 MB per ABI, against ONNX Runtime's ~13 MB.
+    implementation("com.google.ai.edge.litert:litert:1.4.2")
     // Play build only (see src/play). After changing the version, run
     // ./gradlew -Pplay connectedPlayDebugAndroidTest: its telemetry must stay off.
     if (playBuild) {
@@ -179,6 +197,11 @@ dependencies {
 
     // Tests only — nothing below ships in the APK.
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for the Copy text fixtures (Android's is a stub off-device).
+    testImplementation("org.json:json:20240303")
+    // Desktop ONNX Runtime, to check the OCR pipeline against PaddleOCR's own
+    // on a computer (PaddleOcrPipelineTest; skipped without its models).
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.31.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }

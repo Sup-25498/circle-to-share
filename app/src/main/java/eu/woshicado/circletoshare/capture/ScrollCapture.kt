@@ -28,7 +28,7 @@ import java.util.concurrent.Executors
  * Nothing of this app's may be on screen during a step: it would take the
  * drag meant for the app underneath, and be in the screenshot.
  *
- * EXPERIMENTAL. What it cannot do, among other things: tell a bar that
+ * What it cannot do, among other things: tell a bar that
  * lets the list show through from the list (it is repeated at every join),
  * wait for pictures that load late, scroll sideways.
  */

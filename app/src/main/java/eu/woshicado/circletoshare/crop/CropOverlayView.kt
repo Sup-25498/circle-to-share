@@ -26,7 +26,7 @@ import kotlin.math.min
 
 /**
  * Draws the frozen screenshot and a draggable/resizable crop rectangle with
- * Circle-to-Search-style corner handles.
+ * Circle-to-Search-style corner handles; its edges can be dragged too.
  */
 class CropOverlayView @JvmOverloads constructor(
     context: Context,
@@ -80,7 +80,9 @@ class CropOverlayView @JvmOverloads constructor(
     private enum class Mode { NONE, DRAWING, MOVING, RESIZING }
 
     private var mode = Mode.NONE
-    private var activeCorner = -1 // 0=TL 1=TR 2=BL 3=BR
+    // The edges a resize moves (LEFT, TOP, RIGHT, BOTTOM): a corner's two,
+    // or one dragged along its length.
+    private var activeEdges = 0
     private var downX = 0f
     private var downY = 0f
     private var moveOffsetX = 0f
@@ -184,6 +186,11 @@ class CropOverlayView @JvmOverloads constructor(
                 // armed however far the finger travels, and a tap followed
                 // by a slow drag would copy and close mid-drag.
                 if (movedPastTapSlop) return
+                // Nor is one that began on a corner or an edge: a finger held
+                // there a moment before it drags is adjusting the box, not
+                // asking to copy it. (Their grip reaches a finger's width into
+                // the box; the rest of it copies — see hitEdges.)
+                if (mode == Mode.RESIZING) return
                 val x = e.x.coerceIn(imageBounds.left, imageBounds.right)
                 val y = e.y.coerceIn(imageBounds.top, imageBounds.bottom)
                 val sel = selection ?: return
@@ -340,7 +347,7 @@ class CropOverlayView @JvmOverloads constructor(
         selection = selectionFor(rect) ?: return
         qrSelectionActive = false
         mode = Mode.NONE
-        activeCorner = -1
+        activeEdges = 0
         resetStroke()
         listener?.onSelectionChanged(true)
         invalidate()
@@ -618,7 +625,7 @@ class CropOverlayView @JvmOverloads constructor(
             selection = null
             qrSelectionActive = false
             mode = Mode.NONE
-            activeCorner = -1
+            activeEdges = 0
             resetStroke()
             listener?.onSelectionChanged(false)
         }
@@ -674,7 +681,7 @@ class CropOverlayView @JvmOverloads constructor(
         selection = selectionAtDown
         qrSelectionActive = qrSelectionActiveAtDown
         mode = Mode.NONE
-        activeCorner = -1
+        activeEdges = 0
         resetStroke()
         resetSnapEngagement()
         invalidate()
@@ -804,6 +811,18 @@ class CropOverlayView @JvmOverloads constructor(
         canvas.drawLine(sel.left, sel.bottom, sel.left, sel.bottom - l, handlePaint)
         canvas.drawLine(sel.right, sel.bottom, sel.right - l, sel.bottom, handlePaint)
         canvas.drawLine(sel.right, sel.bottom, sel.right, sel.bottom - l, handlePaint)
+        // A short bar mid-edge: the edges can be dragged too. Only where the
+        // edge has room for it between its corners.
+        if (sel.width() >= 4 * cornerLength) {
+            val cx = sel.centerX()
+            canvas.drawLine(cx - cornerLength / 2, sel.top, cx + cornerLength / 2, sel.top, handlePaint)
+            canvas.drawLine(cx - cornerLength / 2, sel.bottom, cx + cornerLength / 2, sel.bottom, handlePaint)
+        }
+        if (sel.height() >= 4 * cornerLength) {
+            val cy = sel.centerY()
+            canvas.drawLine(sel.left, cy - cornerLength / 2, sel.left, cy + cornerLength / 2, handlePaint)
+            canvas.drawLine(sel.right, cy - cornerLength / 2, sel.right, cy + cornerLength / 2, handlePaint)
+        }
     }
 
     /** Colored box + chip over each detected code. Only drawn while nothing
@@ -948,10 +967,10 @@ class CropOverlayView @JvmOverloads constructor(
                     pendingDoubleTap = DoubleTap.EMPTY
                 }
                 emptyTapTime = NO_TAP
-                val corner = sel?.let { hitCorner(it, x, y) } ?: -1
+                val edges = sel?.let { hitEdges(it, x, y) } ?: 0
                 mode = when {
-                    corner >= 0 -> {
-                        activeCorner = corner
+                    edges != 0 -> {
+                        activeEdges = edges
                         Mode.RESIZING
                     }
                     sel != null && sel.contains(x, y) -> Mode.MOVING
@@ -1008,8 +1027,8 @@ class CropOverlayView @JvmOverloads constructor(
                     // A box changes only under a real drag. While the touch
                     // could still be a tap, a double-tap or a long-press it
                     // stays exactly as it is — otherwise a tap's wobble near
-                    // a corner pulls that corner to the finger, and on a
-                    // small box (which is all corner) that shrinks or kills
+                    // a corner or edge pulls it to the finger, and on a
+                    // small box (mostly corners and edges) that shrinks or kills
                     // it just before the shortcut aimed at it fires.
                     Mode.RESIZING -> if (movedPastTapSlop) selection?.let { resize(it, x, y) }
                     Mode.MOVING -> if (movedPastTapSlop) selection?.let { moveTo(it, x, y) }
@@ -1031,7 +1050,7 @@ class CropOverlayView @JvmOverloads constructor(
                     resetStroke()
                     resetSnapEngagement()
                     mode = Mode.NONE
-                    activeCorner = -1
+                    activeEdges = 0
                     listener?.onSelectionChanged(selection != null)
                     invalidate()
                     return true
@@ -1047,7 +1066,7 @@ class CropOverlayView @JvmOverloads constructor(
                     resetStroke()
                     resetSnapEngagement()
                     mode = Mode.NONE
-                    activeCorner = -1
+                    activeEdges = 0
                     invalidate()
                     when (doubleTap) {
                         DoubleTap.INSIDE -> listener?.onDoubleTapInside()
@@ -1062,7 +1081,7 @@ class CropOverlayView @JvmOverloads constructor(
                 // tap) — an invisible tap target would be a trap. Claimed
                 // before the crop logic below, whatever the mode: a tap on an
                 // already selected code lands on its box (MOVING) or, for a
-                // small code, inevitably on a corner handle (RESIZING).
+                // small code, inevitably on a corner or edge (RESIZING).
                 if (action == MotionEvent.ACTION_UP &&
                     qrVisibleAtDown && !movedPastTapSlop
                 ) {
@@ -1072,7 +1091,7 @@ class CropOverlayView @JvmOverloads constructor(
                         resetStroke()
                         resetSnapEngagement()
                         mode = Mode.NONE
-                        activeCorner = -1
+                        activeEdges = 0
                         selectQr(code)
                         listener?.onSelectionChanged(selection != null)
                         invalidate()
@@ -1118,7 +1137,7 @@ class CropOverlayView @JvmOverloads constructor(
                     }
                 }
                 mode = Mode.NONE
-                activeCorner = -1
+                activeEdges = 0
                 listener?.onSelectionChanged(selection != null)
                 invalidate()
                 // A tap as the detector would count one: brief (a press held
@@ -1139,21 +1158,34 @@ class CropOverlayView @JvmOverloads constructor(
         return true
     }
 
-    private fun hitCorner(sel: RectF, x: Float, y: Float): Int {
-        val corners = arrayOf(
-            floatArrayOf(sel.left, sel.top),
-            floatArrayOf(sel.right, sel.top),
-            floatArrayOf(sel.left, sel.bottom),
-            floatArrayOf(sel.right, sel.bottom)
-        )
-        for (i in corners.indices) {
-            if (abs(x - corners[i][0]) < handleTouchRadius &&
-                abs(y - corners[i][1]) < handleTouchRadius
-            ) {
-                return i
-            }
+    /**
+     * The edges a touch at ([x], [y]) takes hold of: a corner's two, or one
+     * edge anywhere along it, to change a single dimension; none (0) away
+     * from them. Corners come first. The grip reaches [handleTouchRadius]
+     * out of the box, and into it a quarter of its size at most: the middle
+     * half of even a small box is for moving it.
+     */
+    private fun hitEdges(sel: RectF, x: Float, y: Float): Int {
+        val r = handleTouchRadius
+        val inX = min(r, sel.width() / 4)
+        val inY = min(r, sel.height() / 4)
+        val left = x > sel.left - r && x < sel.left + inX
+        val right = x < sel.right + r && x > sel.right - inX
+        val top = y > sel.top - r && y < sel.top + inY
+        val bottom = y < sel.bottom + r && y > sel.bottom - inY
+        val alongX = x > sel.left && x < sel.right
+        val alongY = y > sel.top && y < sel.bottom
+        return when {
+            left && top -> LEFT or TOP
+            right && top -> RIGHT or TOP
+            left && bottom -> LEFT or BOTTOM
+            right && bottom -> RIGHT or BOTTOM
+            top && alongX -> TOP
+            bottom && alongX -> BOTTOM
+            left && alongY -> LEFT
+            right && alongY -> RIGHT
+            else -> 0
         }
-        return -1
     }
 
     private fun resize(sel: RectF, xRaw: Float, yRaw: Float) {
@@ -1163,27 +1195,24 @@ class CropOverlayView @JvmOverloads constructor(
         // A snap line may lie a little outside what this view shows of the
         // image (they are kept for a threshold's width beyond it); the edge
         // itself must not follow it there — the crop would take in pixels
-        // the user was never shown.
-        val x = toEdge(snapX(xRaw), imageBounds.left, imageBounds.right)
-        val y = toEdge(snapY(yRaw), imageBounds.top, imageBounds.bottom)
-        when (activeCorner) {
-            0 -> { sel.left = x; sel.top = y }
-            1 -> { sel.right = x; sel.top = y }
-            2 -> { sel.left = x; sel.bottom = y }
-            3 -> { sel.right = x; sel.bottom = y }
+        // the user was never shown. (Only the axes being dragged: snapping
+        // ticks when it engages.)
+        if (activeEdges and (LEFT or RIGHT) != 0) {
+            val x = toEdge(snapX(xRaw), imageBounds.left, imageBounds.right)
+            if (activeEdges and LEFT != 0) sel.left = x else sel.right = x
         }
-        // Flip the active corner when the user drags past the opposite edge.
+        if (activeEdges and (TOP or BOTTOM) != 0) {
+            val y = toEdge(snapY(yRaw), imageBounds.top, imageBounds.bottom)
+            if (activeEdges and TOP != 0) sel.top = y else sel.bottom = y
+        }
+        // Dragged past the opposite edge, the edge in hand becomes that one.
         if (sel.left > sel.right) {
             val t = sel.left; sel.left = sel.right; sel.right = t
-            activeCorner = when (activeCorner) {
-                0 -> 1; 1 -> 0; 2 -> 3; else -> 2
-            }
+            activeEdges = activeEdges xor (LEFT or RIGHT)
         }
         if (sel.top > sel.bottom) {
             val t = sel.top; sel.top = sel.bottom; sel.bottom = t
-            activeCorner = when (activeCorner) {
-                0 -> 2; 2 -> 0; 1 -> 3; else -> 1
-            }
+            activeEdges = activeEdges xor (TOP or BOTTOM)
         }
     }
 
@@ -1212,6 +1241,11 @@ class CropOverlayView @JvmOverloads constructor(
 
     private companion object {
         const val MAX_ZOOM = 6f
+        // Edges of the box, as a resize holds them (see activeEdges).
+        const val LEFT = 1
+        const val TOP = 2
+        const val RIGHT = 4
+        const val BOTTOM = 8
         const val NO_TAP = -1L
         // Taps closer together than this are one bouncing contact, not two
         // taps (the gesture detector's own lower bound).

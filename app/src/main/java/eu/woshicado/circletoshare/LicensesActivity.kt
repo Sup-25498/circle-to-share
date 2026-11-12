@@ -22,20 +22,37 @@ internal enum class License(
     @DrawableRes val icon: Int,
     // The license's text, shipped with the app, or (for one that is an
     // agreement with Google rather than a license to pass on) its page.
+    // Neither for licenses whose text names its holders (BSD, MIT): each
+    // component has its own then (Component.notice).
     @RawRes val text: Int? = null,
     @StringRes val url: Int? = null,
     // What the section says before its components, if anything.
     @StringRes val note: Int? = null,
 ) {
     APACHE_2("Apache License 2.0", R.drawable.ic_section_components, text = R.raw.license_apache_2_0),
+    BSD("BSD License", R.drawable.ic_section_components),
+    MIT("MIT License", R.drawable.ic_section_components),
+    MPL_2(
+        "Mozilla Public License 2.0", R.drawable.ic_section_components,
+        text = R.raw.license_mpl_2_0, note = R.string.licenses_mpl_note,
+    ),
+    OTHER("Other licenses", R.drawable.ic_section_components),
     ANDROID_SDK(
         "Android Software Development Kit License", R.drawable.ic_section_android,
         url = R.string.url_android_sdk_license, note = R.string.licenses_sdk_note,
     ),
 }
 
-/** An open-source component the app is built with. */
-internal class Component(val name: String, val holder: String, val license: License)
+/**
+ * An open-source component the app is built with, and, where its license
+ * is its own notice (a BSD or MIT license names its holders), that notice.
+ */
+internal class Component(
+    val name: String,
+    val holder: String,
+    val license: License,
+    @RawRes val notice: Int? = null,
+)
 
 /**
  * What the app is built with, in every build. The store's own components
@@ -48,6 +65,15 @@ internal val components = listOf(
     Component("Material Components for Android", "The Android Open Source Project", License.APACHE_2),
     Component("Material Icons and Material Symbols", "Google LLC", License.APACHE_2),
     Component("ZXing", "ZXing authors", License.APACHE_2),
+    // Copy text: the OCR models and what runs them. LiteRT's native library
+    // compiles in the "(in LiteRT)" ones (its LICENSE names Caffe; the rest
+    // are TensorFlow Lite's build dependencies, found in the library).
+    Component("LiteRT (TensorFlow Lite)", "The TensorFlow Authors", License.APACHE_2),
+    Component("PaddleOCR PP-OCRv5 models (converted)", "PaddlePaddle Authors", License.APACHE_2),
+    Component("RapidOCR (the models' ONNX exports)", "RapidOCR Authors", License.APACHE_2),
+    Component("ruy (in LiteRT)", "Google LLC", License.APACHE_2),
+    Component("gemmlowp (in LiteRT)", "The gemmlowp Authors", License.APACHE_2),
+    Component("FlatBuffers (in LiteRT)", "Google Inc.", License.APACHE_2),
     Component(
         "Kotlin standard library", "JetBrains s.r.o. and Kotlin Programming Language contributors",
         License.APACHE_2,
@@ -57,6 +83,29 @@ internal val components = listOf(
     Component("Error Prone annotations", "The Error Prone Authors", License.APACHE_2),
     Component("JSpecify", "The JSpecify Authors", License.APACHE_2),
     Component("JetBrains Java Annotations", "JetBrains s.r.o.", License.APACHE_2),
+    Component(
+        "XNNPACK (in LiteRT)", "Facebook, Inc. and its affiliates; Google LLC", License.BSD,
+        R.raw.notice_xnnpack,
+    ),
+    Component(
+        "pthreadpool (in LiteRT)", "Google LLC; Facebook Inc.; Georgia Institute of Technology", License.BSD,
+        R.raw.notice_pthreadpool,
+    ),
+    Component(
+        "cpuinfo (in LiteRT)", "Google LLC; Facebook Inc.; Georgia Institute of Technology; Marat Dukhan",
+        License.BSD, R.raw.notice_cpuinfo,
+    ),
+    Component(
+        "Caffe (parts of LiteRT)", "The Regents of the University of California and contributors", License.BSD,
+        R.raw.notice_caffe,
+    ),
+    Component(
+        "FP16 (in LiteRT)", "Facebook Inc.; Georgia Institute of Technology; Google LLC", License.MIT,
+        R.raw.notice_fp16,
+    ),
+    Component("FXdiv (in LiteRT)", "Facebook Inc.; Marat Dukhan", License.MIT, R.raw.notice_fxdiv),
+    Component("Eigen (in LiteRT)", "The Eigen authors", License.MPL_2),
+    Component("fft2d (in LiteRT)", "Takuya Ooura", License.OTHER, R.raw.notice_fft2d),
 )
 
 /**
@@ -105,18 +154,27 @@ class LicensesActivity : AppCompatActivity() {
             heading(license.title, license.icon)
             license.note?.let { note(it) }
             used.forEach { component ->
-                groups.addView(inflater.inflate(R.layout.item_license, groups, false).apply {
-                    findViewById<TextView>(R.id.license_component).text = component.name
-                    findViewById<TextView>(R.id.license_holder).text =
-                        getString(R.string.licenses_copyright, component.holder)
-                })
+                val notice = component.notice
+                if (notice != null) {
+                    // Its notice, which names its holders, folded under its name.
+                    groups.addView(inflater.inflate(R.layout.item_license_text, groups, false).also {
+                        it.findViewById<TextView>(R.id.license_text_title).text = component.name
+                        fold(it, component.name, reopen) { rawText(notice) }
+                    })
+                } else {
+                    groups.addView(inflater.inflate(R.layout.item_license, groups, false).apply {
+                        findViewById<TextView>(R.id.license_component).text = component.name
+                        findViewById<TextView>(R.id.license_holder).text =
+                            getString(R.string.licenses_copyright, component.holder)
+                    })
+                }
             }
             val text = license.text
             if (text != null) {
                 groups.addView(inflater.inflate(R.layout.item_license_text, groups, false).also {
                     fold(it, license.name, reopen) { rawText(text) }
                 })
-            } else {
+            } else if (license.url != null) {
                 groups.addView(inflater.inflate(R.layout.item_license_link, groups, false).apply {
                     setOnClickListener { license.url?.let { openUrl(it) } }
                 })

@@ -30,7 +30,7 @@ class ExperimentalNoticeDialog : AppCompatDialogFragment() {
      *  settings. Kept by its own name here, not by that text: a notice
      *  that outlives a change of language says its feature in the new one. */
     enum class Feature(@StringRes val title: Int) {
-        SCROLLSHOT(R.string.switch_scrollshot)
+        COPY_TEXT(R.string.switch_copy_text)
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {

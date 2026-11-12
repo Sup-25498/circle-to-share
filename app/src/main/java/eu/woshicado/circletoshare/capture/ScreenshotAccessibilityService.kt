@@ -52,6 +52,7 @@ import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
 import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
+import eu.woshicado.circletoshare.text.PendingScreenText
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import java.io.IOException
@@ -144,10 +145,6 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         private const val SNAP_MAX_NODES = 400
         private const val SNAP_MAX_DEPTH = 25
 
-        // From this many children up it is worth finding out whether they
-        // run down the page in order, to skip those above the screen.
-        private const val SNAP_SEARCH_MIN = 12
-
         // How long to wait after hiding the trigger before grabbing the screen.
         // The bubble is one removeView away; the Quick Settings shade has to
         // play its collapse animation first, or the shot is of the panel.
@@ -157,6 +154,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // rather than vanish. A guess at 1x animation speed, not measured.
         private const val SESSION_HIDE_BASE_MS = 400f
         private const val SESSION_HIDE_OFF_MS = 150L
+
+        // The same for whatever started CaptureTriggerActivity: a menu fading
+        // out (MacroDroid's was still in an 80 ms shot). Not measured further.
+        private const val APP_TRIGGER_BASE_MS = 300f
 
         // How long a notice stays up — a long toast's time — and a little
         // longer for one that can be tapped, to leave time to reach it.
@@ -185,6 +186,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // isn't a full-height system window). Shooting a shade is better than
         // hanging forever with the latch held.
         private const val SHADE_WAIT_TIMEOUT_MS = 1200L
+        // When the tile collapses its panel itself: the tile stops listening as
+        // the panel starts to close, not when it is gone — this long after that
+        // (ScreenshotTile's 700 ms, scaled like other waits) before looking for
+        // the shade's window as usual. And how long to wait for the tile to
+        // stop listening at all.
+        private const val TILE_COLLAPSE_SETTLE_MS = 700f
+        private const val TILE_COLLAPSE_TIMEOUT_MS = 1000L
 
         /**
          * Which scrollshot buttons a run leaves something behind: a run that
@@ -294,6 +302,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private var overlayBitmap: Bitmap? = null
     private var bubbleDensityDpi = 0
     private var overlaySnap: SnapBounds? = null
+    // The text on screen when the open overlay's picture was taken, for
+    // "Copy text", as it is being read (see collectScreenText); null for a
+    // picture a run has grown. Cancelled when the overlay goes, unless handed
+    // on (takeOverlayText, or the same picture presented again).
+    private var overlayText: PendingScreenText? = null
     // What scrolled sideways when the open overlay's picture was taken (see
     // sidewaysAreasNow); empty for a picture a run has grown.
     private var overlayAreas: List<Rect> = emptyList()
@@ -349,6 +362,16 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // The generation of a bubble/tile capture that holds the latch but has
     // not yet presented its overlay or given up; NO_CAPTURE otherwise.
     private var pendingCaptureGen = NO_CAPTURE
+
+    // The generation of a tile capture waiting for the tile's panel to close
+    // after the tile collapsed it itself (see triggerCaptureFromShade);
+    // NO_CAPTURE otherwise.
+    private var tileCollapseGen = NO_CAPTURE
+
+    // Whether the shade's window has been seen expanded here (see
+    // shadeExpanded): then a shade not seen is one that has gone, not one
+    // laid out where this can't tell (see triggerCaptureFromTileLaunch).
+    private var shadeSeen = false
 
     private val displayManager by lazy { getSystemService(DisplayManager::class.java) }
 
@@ -560,6 +583,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // (Nothing of ours is on screen to keep in step with, either.)
         if (!consented()) return
+        // Asked for only so that the window list is up to date: Android keeps a
+        // copy for the service, refreshed by the window events it receives. A
+        // shade closing over an app that stays as it is sends no other — the
+        // list went on showing it full height (see shadeExpanded), and every
+        // tile capture waited out the whole timeout. Nothing else to do here.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            if (!shadeSeen) shadeExpanded() // (notes it)
+            return
+        }
         // Only asked for while a "Capture more" step runs (see
         // watchScrolling), and only added up.
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
@@ -659,6 +691,22 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * The text on screen, for "Copy text" in the tool about to open: its
+     * reading starts at the moment of capture like the snap bounds, and
+     * carries on in the background; only once the user has agreed to the
+     * service reading text (see [Prefs.hasTextConsent]), and with Copy text
+     * on ([Prefs.isCopyTextEnabled]). Kept in memory while
+     * the tool is open, never stored. Null where it may not be read.
+     */
+    fun collectScreenText(): PendingScreenText? {
+        if (!consented() || !Prefs.hasTextConsent(this) || !Prefs.isCopyTextEnabled(this)) return null
+        val bounds = displayMetrics().bounds
+        return runCatching {
+            ScreenTextReader.start(windows, Rect(0, 0, bounds.width(), bounds.height()), packageName)
+        }.getOrNull()
+    }
+
+    /**
      * Bounds of the UI elements currently on screen, for snap-to-content
      * cropping. Read via the window/node tree at the moment of capture only —
      * never stored. Null when window introspection is unavailable (service
@@ -737,8 +785,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // never get to what is on it. Where there are many children and
         // they run down the page in order, start at the first that reaches
         // the screen and stop after the last that does.
-        val sorted = count >= SNAP_SEARCH_MIN && runsDownThePage(node, count)
-        var i = if (sorted) firstChildReachingScreen(node, count, display) else 0
+        val sorted = count >= NodeWalk.SEARCH_MIN && NodeWalk.runsDownThePage(node, count)
+        var i = if (sorted) NodeWalk.firstChildReachingScreen(node, count, display) else 0
         var seenOnScreen = false
         val bounds = Rect()
         while (i < count) {
@@ -755,38 +803,6 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             budget = walkSnapNodes(child, depth + 1, budget, display, minSide, out)
         }
         return budget
-    }
-
-    /** Whether [node]'s [count] children are laid out one below the other
-     *  in the order they are listed in — judged by three of them. */
-    private fun runsDownThePage(node: AccessibilityNodeInfo, count: Int): Boolean {
-        var last = Int.MIN_VALUE
-        val r = Rect()
-        for (i in intArrayOf(0, count / 2, count - 1)) {
-            val child = node.getChild(i) ?: return false
-            child.getBoundsInScreen(r)
-            if (r.isEmpty || r.top < last) return false
-            last = r.top
-        }
-        return true
-    }
-
-    /** The first of [node]'s children (which run down the page) to end
-     *  below the top of [display]: every one before it is above the screen. */
-    private fun firstChildReachingScreen(node: AccessibilityNodeInfo, count: Int, display: Rect): Int {
-        var lo = 0
-        var hi = count
-        val r = Rect()
-        while (lo < hi) {
-            val mid = (lo + hi) ushr 1
-            val child = node.getChild(mid)
-            child?.getBoundsInScreen(r)
-            // (One that can't be placed is taken to be on screen: better a
-            // few looks too many than a start too far down.)
-            if (child != null && !r.isEmpty && r.bottom <= display.top) lo = mid + 1 else hi = mid
-        }
-        // A step back: neighbours can overlap by a margin.
-        return (lo - 1).coerceAtLeast(0)
     }
 
     // --- Floating bubble ----------------------------------------------------
@@ -1182,7 +1198,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * this returns [Refusal.NONE] — screen locked during the wait — does cost
      * the user their shade; see `abandonCapture`.)
      */
-    fun triggerCaptureFromShade(): Refusal {
+    fun triggerCaptureFromShade(collapse: (() -> Boolean)? = null): Refusal {
         // The same gate the bubble lives behind: never shoot, and never present
         // the crop tool, over a lock screen or AOD.
         //
@@ -1204,13 +1220,95 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // failure would silently drop the capture the user just authenticated
         // for. With no shade there is no collapse to outlast, so shoot on the
         // same short delay the bubble uses.
+        //
+        // A tap on the tile itself ([collapse] given) has a shade above it all
+        // the same. A `false` there is SystemUI not offering the action at
+        // all — its panel state never says "expanded" on a skin that runs a
+        // panel of its own (reported on OxygenOS 16). Then the tile collapses
+        // its panel the way any app's tile can, by starting an activity, as
+        // ScreenshotTile does on every device.
         val gen = beginCapture() ?: return Refusal.BUSY
-        if (dismissShade()) {
-            awaitShadeCollapsed(gen)
-        } else {
-            ui.postDelayed({ runCapture(gen) }, BUBBLE_HIDE_DELAY_MS)
+        when {
+            dismissShade() -> awaitShadeCollapsed(gen)
+            collapse != null && collapse() -> {
+                android.util.Log.d("CircleToShare", "tile: no shade action, the tile collapses its panel")
+                // Watched as above where its window can be told; where it can't
+                // (a panel laid out otherwise), the tile's word that it closes.
+                if (shadeExpanded()) awaitShadeCollapsed(gen) else awaitTilePanelClosed(gen)
+            }
+            else -> ui.postDelayed({ runCapture(gen) }, BUBBLE_HIDE_DELAY_MS)
         }
         return Refusal.NONE
+    }
+
+    /**
+     * Capture for another app's asking — an automation app (Tasker, MacroDroid)
+     * or a shortcut, through CaptureTriggerActivity. No shade to wait for, but
+     * what started it may still be fading out (a launcher's shortcut menu, the
+     * automation app's own): a little longer than the bubble's delay. The
+     * refusals as [triggerCaptureFromShade]'s.
+     */
+    fun triggerCaptureFromApp(): Refusal {
+        if (!consented()) return Refusal.NO_CONSENT
+        if (!isScreenUsable()) return Refusal.LOCKED
+        if (capturing) return Refusal.BUSY
+        val gen = beginCapture() ?: return Refusal.BUSY
+        ui.postDelayed({ runCapture(gen) }, animationSettleMs(this, baseMs = APP_TRIGGER_BASE_MS, offMs = BUBBLE_HIDE_DELAY_MS))
+        return Refusal.NONE
+    }
+
+    /**
+     * Capture for a tap on the tile that SystemUI turned into starting the
+     * tile's activity (Android 15+, see CaptureTileService): SystemUI closes
+     * the shade itself, and has asked for an unlock first where one was
+     * needed. The refusals as [triggerCaptureFromShade]'s.
+     */
+    fun triggerCaptureFromTileLaunch(): Refusal {
+        if (!consented()) return Refusal.NO_CONSENT
+        if (!isScreenUsable()) return Refusal.LOCKED
+        if (capturing) return Refusal.BUSY
+        val gen = beginCapture() ?: return Refusal.BUSY
+        val expanded = shadeExpanded()
+        android.util.Log.d(
+            "CircleToShare",
+            "tile: started by SystemUI, shade ${if (expanded) "closing" else if (shadeSeen) "gone" else "never seen"}"
+        )
+        when {
+            expanded -> awaitShadeCollapsed(gen)
+            // Gone already, where its window can be told at all.
+            shadeSeen -> ui.postDelayed({ runCapture(gen) }, BUBBLE_HIDE_DELAY_MS)
+            // A panel laid out where this can't see it: the time ScreenshotTile
+            // gives its collapse.
+            else -> ui.postDelayed(
+                { awaitShadeCollapsed(gen) },
+                animationSettleMs(this, baseMs = TILE_COLLAPSE_SETTLE_MS, offMs = SHADE_SETTLE_MS)
+            )
+        }
+        return Refusal.NONE
+    }
+
+    /** The tile collapsed its panel itself: shoot once it has closed (see
+     *  [tilePanelClosed]), or after a while if the tile never says so. */
+    private fun awaitTilePanelClosed(gen: Int) {
+        tileCollapseGen = gen
+        ui.postDelayed({
+            if (tileCollapseGen != gen) return@postDelayed
+            android.util.Log.d("CircleToShare", "tile: never stopped listening, shooting anyway")
+            tilePanelClosed()
+        }, TILE_COLLAPSE_TIMEOUT_MS)
+    }
+
+    /** The tile has stopped listening: the panel it is in is closing. Nothing
+     *  to do unless a capture waits for that ([awaitTilePanelClosed]). */
+    fun tilePanelClosed() {
+        val gen = tileCollapseGen
+        if (gen == NO_CAPTURE) return
+        tileCollapseGen = NO_CAPTURE
+        if (gen != bubbleCaptureGen) return // superseded
+        ui.postDelayed(
+            { awaitShadeCollapsed(gen) },
+            animationSettleMs(this, baseMs = TILE_COLLAPSE_SETTLE_MS, offMs = SHADE_SETTLE_MS)
+        )
     }
 
     /**
@@ -1261,7 +1359,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             if (w.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false
             w.getBoundsInScreen(bounds)
             bounds.height() > display.height() / 2 && bounds.width() > display.width() / 2
-        }
+        }.also { if (it) shadeSeen = true }
     }
 
     /**
@@ -1351,7 +1449,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (!isScreenUsable()) return@post abandonCapture()
                 if (bitmap != null) {
                     val snap = if (snapEnabledNow()) collectSnapBounds() else null
-                    presentOverlay(bitmap, snap, areas = sidewaysAreasNow())
+                    presentOverlay(bitmap, snap, areas = sidewaysAreasNow(), text = collectScreenText())
                 } else {
                     showNotice(getString(R.string.error_capture_failed))
                     abandonCapture()
@@ -1364,6 +1462,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      *  locked mid-capture doesn't leave the tool wedged shut. */
     private fun abandonCapture() {
         pendingCaptureGen = NO_CAPTURE
+        tileCollapseGen = NO_CAPTURE
         capturing = false
         // A "Capture more" step given up mid-way leaves its picture behind.
         if (overlayView == null) teardownOverlay()
@@ -1450,12 +1549,20 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      *  rather than whatever the app underneath has changed to since. */
     fun openOverlaySnapBounds(): SnapBounds? = if (overlayView != null) overlaySnap else null
 
+    /** The screen text that goes with [openOverlayScreenshot], likewise —
+     *  handed over: the overlay closing no longer stops its reading. */
+    fun takeOverlayText(): PendingScreenText? =
+        if (overlayView != null) overlayText.also { overlayText = null } else null
+
     /** [run]: the "Capture more" run [bitmap] comes from, to carry on with
      *  if more is asked for. */
     private fun presentOverlay(
-        bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null, areas: List<Rect> = emptyList()
+        bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null, areas: List<Rect> = emptyList(),
+        text: PendingScreenText? = null
     ) {
         ShareHelper.cleanupCache(this)
+        // (The same picture presented again keeps its text being read.)
+        if (overlayText === text) overlayText = null
         teardownOverlay()
         scrollRun = run
         overlayAreas = areas
@@ -1463,6 +1570,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         overlayGen = bubbleCaptureGen
         overlayBitmap = bitmap
         overlaySnap = snap
+        overlayText = text
 
         // (The screen itself takes no keyboard focus: Back reaches it without
         // — see CropScreen.dispatchKeyEvent — and a focused root would keep
@@ -1540,6 +1648,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (runCatching { windowManager.addView(screen, params) }.isFailure) {
             overlayBitmap = null
             overlaySnap = null
+            overlayText?.cancel()
+            overlayText = null
             scrollRun = null
             // Restore the "no overlay is open" invariant overlayGen documents —
             // it was claimed just above, and leaving it pointing at the live
@@ -1562,10 +1672,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { dismissOverlay() }
         }
-        screen.setBitmap(bitmap, snap, scrollshot = run != null && (run.grown || run.area != null))
+        screen.setBitmap(bitmap, snap, scrollshot = run != null && (run.grown || run.area != null), text = text)
     }
 
-    // --- Capture more (experimental) ------------------------------------------
+    // --- Capture more ------------------------------------------------------
 
     /**
      * One of the "Capture more" buttons was tapped in the open overlay:
@@ -1589,7 +1699,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * EXPERIMENTAL. Begin a sideways run of [area] (display pixels), [going]
+     * Begin a sideways run of [area] (display pixels), [going]
      * left or right: the tool goes away, the area is shot as it is and
      * grown one step, and comes back as the picture.
      */
@@ -1664,6 +1774,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun keepForRetry(picture: Bitmap, snap: SnapBounds?, areas: List<Rect>) {
         overlayBitmap = picture
         overlaySnap = snap
+        // (The session's text stays with the session: a picture that comes
+        // back from here gets OCR'd instead.)
+        overlayText?.cancel()
+        overlayText = null
         overlayAreas = areas
     }
 
@@ -1729,7 +1843,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     // with the "↔" button as the one before it had.)
                     presentOverlay(grown, run.snapBounds(), run, if (run.grown) emptyList() else overlayAreas)
                 } else {
-                    presentOverlay(bitmap, overlaySnap, null, overlayAreas)
+                    presentOverlay(bitmap, overlaySnap, null, overlayAreas, overlayText)
                     if (retryWith != null) overlayView?.applyCropRect(retryWith)
                 }
                 when (outcome) {
@@ -1842,6 +1956,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         detachOverlayView()
         overlayBitmap = null
         overlaySnap = null
+        overlayText?.cancel()
+        overlayText = null
         scrollRun = null
         // (A step called off mid-way never gets to switch this off itself.)
         watchScrolling(false)

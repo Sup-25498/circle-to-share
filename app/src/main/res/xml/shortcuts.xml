@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- On the launcher icon (long-press), to pin to the home screen, and for
+     automation apps that start app shortcuts: see CaptureTriggerActivity. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="capture"
+        android:shortcutLongLabel="@string/shortcut_capture_long"
+        android:shortcutShortLabel="@string/shortcut_capture">
+        <intent
+            android:action="eu.woshicado.circletoshare.CAPTURE"
+            android:targetClass="eu.woshicado.circletoshare.capture.CaptureTriggerActivity"
+            android:targetPackage="eu.woshicado.circletoshare" />
+    </shortcut>
+</shortcuts>

@@ -18,6 +18,7 @@ import eu.woshicado.circletoshare.share.Delivery
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -37,6 +38,7 @@ class CropScreenTest {
     private var qrDetectionWasOn = true
     // The remembered crop as found (its six keys), to put back.
     private var lastCropWas: Map<String, Int> = emptyMap()
+    private var copyTextWasOn = false
 
     @Before
     fun setUp() = onMain {
@@ -45,6 +47,10 @@ class CropScreenTest {
         // whenever it arrives and replaces any codes a test has put in.
         qrDetectionWasOn = Prefs.isQrDetectEnabled(context)
         Prefs.setQrDetectEnabled(context, false)
+        // On for these tests (off by default): the bar with Copy text is the
+        // fuller one, and the tests of its fit and its button expect it.
+        copyTextWasOn = Prefs.isCopyTextEnabled(context)
+        Prefs.setCopyTextEnabled(context, true)
         lastCropWas = context.getSharedPreferences("cts", Context.MODE_PRIVATE).all
             .filterKeys { it.startsWith("last_crop_") }.mapValues { it.value as Int }
         screen = CropScreen(context)
@@ -68,6 +74,7 @@ class CropScreenTest {
     @After
     fun tearDown() {
         Prefs.setQrDetectEnabled(context, qrDetectionWasOn)
+        Prefs.setCopyTextEnabled(context, copyTextWasOn)
         // (A test that started a sideways run remembered its selection as
         // the last crop: back to what was remembered before.)
         context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().apply {
@@ -96,8 +103,8 @@ class CropScreenTest {
         assertNotNull(hint)
         val startX = (hint!!.left + hint.right) / 2f
         val startY = (hint.top + hint.bottom) / 2f
-        val share = findText(screen, context.getString(R.string.action_share_full))
-        assertNotNull("with nothing selected the button offers the full screen", share)
+        val share = findText(screen, context.getString(R.string.action_share))
+        assertNotNull("with nothing selected the button is there (it shares the full screen)", share)
 
         // A stroke that begins on the hint and loops through the screen.
         onMain {
@@ -123,47 +130,104 @@ class CropScreenTest {
     }
 
     @Test
-    fun aSelectionTurnsCancelIntoSave() {
-        val delivered = mutableListOf<Delivery>()
+    fun saveSaves_withASelectionOrWithout_andCloseIsInTheCorner() {
+        val delivered = mutableListOf<Pair<Delivery, Rect?>>()
         var cancelled = 0
         onMain {
             screen.callbacks = object : CropScreen.Callbacks {
                 override fun onDeliver(action: Delivery, rect: Rect?) {
-                    delivered += action
+                    delivered += action to rect
                 }
                 override fun onCancel() {
                     cancelled++
                 }
             }
         }
-        val (dismiss, _, _) = barButtons()
+        val (save, _, share) = barButtons()
+        val close = findByDescription(screen, context.getString(R.string.action_close))
+        assertNotNull("a close button", close)
+        assertNotEquals("not in the bar", share.parent, close!!.parent)
+        assertTrue("in the top corner", close.top < HEIGHT / 4 && close.right > WIDTH * 3 / 4)
+
+        // Nothing selected: the whole picture.
+        onMain { save.performClick() }
+        assertEquals(listOf<Pair<Delivery, Rect?>>(Delivery.SAVE to null), delivered)
 
         onMain { findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900)) }
-        assertEquals(context.getString(R.string.action_save), dismiss.text.toString())
+        assertEquals("the same button, the same words", context.getString(R.string.action_save), save.text.toString())
         // Delivering remembers the crop for this capture size, which would
         // turn the other tests' hint into the restore offer: put back what
         // was remembered before. ("cts" is the app's preference file.)
         val prefs = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
         val remembered = prefs.all.filterKeys { it.startsWith("last_crop_") }
         try {
-            onMain { dismiss.performClick() }
+            onMain { save.performClick() }
         } finally {
             prefs.edit().apply {
                 prefs.all.keys.filter { it.startsWith("last_crop_") }.forEach { remove(it) }
                 remembered.forEach { (key, value) -> putInt(key, value as Int) }
             }.commit()
         }
-        assertEquals("Save saves", listOf(Delivery.SAVE), delivered)
-        assertEquals("and doesn't cancel", 0, cancelled)
+        assertEquals(Delivery.SAVE to Rect(100, 200, 600, 900), delivered.last())
+        assertEquals("saving doesn't close", 0, cancelled)
 
-        // A new capture starts without a selection: Cancel again.
+        // With a selection, ✕ still closes.
+        onMain { close.performClick() }
+        assertEquals(1, cancelled)
+        assertEquals(2, delivered.size)
+    }
+
+    @Test
+    fun copyTextSitsBesideCopy_withOrWithoutASelection_inTheRoomCopysLabelTook() {
+        val (_, copy, _) = barButtons()
+        val bar = copy.parent as ViewGroup
+        val text = (0 until bar.childCount).map { bar.getChildAt(it) as TextView }
+            .first { it.contentDescription == context.getString(R.string.action_copy_text) }
+        // No selection: both there already (the whole screen's text).
+        assertEquals(View.VISIBLE, text.visibility)
+        assertEquals("Copy gives up its label", "", copy.text.toString())
+        assertEquals(context.getString(R.string.action_copy_image), copy.contentDescription)
+        // The room the labeled Copy takes, as with Copy text switched off.
+        val wasOn = Prefs.isCopyTextEnabled(context)
+        Prefs.setCopyTextEnabled(context, false)
+        val labeledWidth = try {
+            onMain { screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)); layOut() }
+            copy.measuredWidth
+        } finally {
+            Prefs.setCopyTextEnabled(context, wasOn)
+        }
         onMain {
             screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
-            dismiss.performClick()
+            findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900))
+            layOut()
         }
-        assertEquals(context.getString(R.string.action_cancel), dismiss.text.toString())
-        assertEquals(1, cancelled)
-        assertEquals(1, delivered.size)
+        assertEquals(View.VISIBLE, text.visibility)
+        val gap = (text.layoutParams as ViewGroup.MarginLayoutParams).marginStart +
+            (copy.layoutParams as ViewGroup.MarginLayoutParams).marginEnd
+        assertTrue(
+            "the two icons (${copy.measuredWidth} + ${text.measuredWidth} + $gap) fit where Copy was ($labeledWidth)",
+            copy.measuredWidth + text.measuredWidth + gap <= labeledWidth + gap
+        )
+    }
+
+    @Test
+    fun withCopyTextSwitchedOff_aSelectionKeepsTheLabeledCopy_andNoCopyText() {
+        val was = Prefs.isCopyTextEnabled(context)
+        Prefs.setCopyTextEnabled(context, false)
+        try {
+            val (_, copy, _) = barButtons()
+            val bar = copy.parent as ViewGroup
+            onMain {
+                findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900))
+                layOut()
+            }
+            assertEquals(context.getString(R.string.action_copy), copy.text.toString())
+            val copyText = (0 until bar.childCount).map { bar.getChildAt(it) as TextView }
+                .first { it.contentDescription == context.getString(R.string.action_copy_text) }
+            assertEquals(View.GONE, copyText.visibility)
+        } finally {
+            Prefs.setCopyTextEnabled(context, was)
+        }
     }
 
     @Test
@@ -228,13 +292,13 @@ class CropScreenTest {
     fun backReachesTheHostEvenWithFocusOnAButton() {
         var backs = 0
         onMain { screen.onBackKey = { backs++ } }
-        val cancel = findText(screen, context.getString(R.string.action_cancel))
-        assertNotNull(cancel)
+        val save = findText(screen, context.getString(R.string.action_save))
+        assertNotNull(save)
         onMain {
             // Keyboard focus on a pill: from here a key listener on the
             // screen itself would never be consulted.
-            cancel!!.isFocusableInTouchMode = true
-            cancel.requestFocus()
+            save!!.isFocusableInTouchMode = true
+            save.requestFocus()
             screen.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
             screen.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK))
         }
@@ -257,49 +321,82 @@ class CropScreenTest {
 
     @Test
     fun buttonsThatFitSideBySide_areARowWithTheMainActionLast() {
-        val (cancel, copy, share) = barButtons()
+        val (save, copy, share) = barButtons()
 
-        assertEquals("one row", cancel.top, copy.top)
+        assertEquals("one row", save.top, copy.top)
         assertEquals("one row", copy.top, share.top)
-        assertTrue(cancel.right <= copy.left && copy.right <= share.left)
-        for (button in listOf(cancel, copy, share)) assertEquals(1, button.lineCount)
+        assertTrue(save.right <= copy.left && copy.right <= share.left)
+        for (button in listOf(save, copy, share)) assertEquals(1, button.lineCount)
+    }
+
+    @Test
+    fun buttonsWhoseLabelsDoNotFit_showTheirIconsAlone_whereThoseFit() {
+        val (save, _, share) = barButtons()
+        val bar = share.parent as ViewGroup
+        val shown = (0 until bar.childCount).count { bar.getChildAt(it).visibility != View.GONE }
+        // Room for every icon alone (18 dp, 14 dp either side, 6 dp margins),
+        // not for the labels.
+        val density = context.resources.displayMetrics.density
+        val width = ((shown * (18 + 2 * 14 + 2 * 6) + 8) * density).toInt()
+        assertTrue(width < bar.width)
+
+        onMain { layOut(width) }
+        assertEquals("one row", save.top, share.top)
+        assertEquals("", save.text.toString())
+        assertEquals("", share.text.toString())
+        // Their labels said to screen readers instead.
+        assertEquals(context.getString(R.string.action_save), save.contentDescription?.toString())
+        assertEquals(context.getString(R.string.action_share), share.contentDescription?.toString())
+        assertTrue("within the screen", bar.left >= 0 && bar.right <= width)
+
+        // A label given meanwhile waits for the room...
+        onMain {
+            share.text = "Send"
+            layOut(width)
+        }
+        assertEquals("", share.text.toString())
+        // ...and with the room back, the labels are back.
+        onMain { layOut() }
+        assertEquals(context.getString(R.string.action_save), save.text.toString())
+        assertEquals("Send", share.text.toString())
+        assertNull(save.contentDescription)
     }
 
     @Test
     fun buttonsThatDoNotFitSideBySide_stackWithTheMainActionFirst() {
-        val (cancel, copy, share) = barButtons()
+        val (save, copy, share) = barButtons()
         // Too narrow for the three in a row, wide enough for the widest alone
         // — what a small screen at a large font size comes to.
         val bar = share.parent as View
-        val narrow = share.width + (cancel.width + copy.width) / 2
+        val narrow = share.width + (save.width + copy.width) / 2
         assertTrue(narrow < bar.width)
 
         onMain { layOut(narrow) }
 
         assertTrue("main action on top", share.bottom <= copy.top)
-        assertTrue(copy.bottom <= cancel.top)
-        for (button in listOf(cancel, copy, share)) {
+        assertTrue(copy.bottom <= save.top)
+        for (button in listOf(save, copy, share)) {
             assertEquals("no label is broken across lines", 1, button.lineCount)
             assertEquals("equally wide", share.width, button.width)
             assertTrue("within the screen", bar.left + button.left >= 0 && bar.left + button.right <= narrow)
         }
 
-        // Its label getting shorter (a selection appearing) changes nothing…
+        // Its label getting shorter changes nothing…
         onMain {
-            share.text = context.getString(R.string.action_share)
+            share.text = "Send"
             layOut(narrow)
         }
         assertTrue("still stacked", share.bottom <= copy.top)
 
         // …and with room again it is a row again, in its usual order.
         onMain { layOut() }
-        assertEquals(cancel.top, share.top)
-        assertTrue(cancel.right <= copy.left && copy.right <= share.left)
+        assertEquals(save.top, share.top)
+        assertTrue(save.right <= copy.left && copy.right <= share.left)
     }
 
     @Test
     fun theQrPanelSitsAboveTheButtons_howeverTallTheyAre() {
-        val (cancel, _, share) = barButtons()
+        val (save, _, share) = barButtons()
         val bar = share.parent as View
         val panel = findText(screen, context.getString(R.string.qr_open_failed))!!.parent as View
         val cropView = findCropView(screen)!!
@@ -310,9 +407,9 @@ class CropScreenTest {
         assertEquals(View.VISIBLE, panel.visibility)
         assertTrue("above the row", panel.bottom < bar.top)
 
-        val narrow = share.width + cancel.width / 2
+        val narrow = share.width + save.width / 2
         onMain { layOut(narrow) }
-        assertTrue("the buttons are stacked", share.bottom <= cancel.top)
+        assertTrue("the buttons are stacked", share.bottom <= save.top)
         assertTrue("above the stack", panel.bottom < bar.top)
         assertTrue("and on screen", panel.top >= 0)
     }
@@ -436,6 +533,32 @@ class CropScreenTest {
     }
 
     @Test
+    fun saveAndShareAreEquallyWide_andTheBarIsSymmetric() {
+        val (save, _, share) = barButtons()
+        val bar = share.parent as View
+        assertEquals(share.width, save.width)
+        // As far from the bar's start as Share is from its end: what lies
+        // between them is in the middle.
+        assertEquals(save.left, bar.width - share.right)
+        assertEquals(WIDTH / 2f, (bar.left + bar.right) / 2f, 1f)
+    }
+
+    @Test
+    fun theMoreButtonsAreEquallyWide_withSidewaysInTheMiddleOfTheScreen() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        val sideways = sidewaysButton()
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onCaptureSideways = {}
+            layOut()
+        }
+        assertEquals(below.width, above.width)
+        val row = sideways.parent as View
+        assertEquals(WIDTH / 2f, row.left + (sideways.left + sideways.right) / 2f, 1f)
+    }
+
+    @Test
     fun sidewaysIsOffered_betweenTheTwo_whileNoRunHasBegun() {
         val above = moreButton(R.string.action_capture_more_above)
         val below = moreButton(R.string.action_capture_more_below)
@@ -470,6 +593,11 @@ class CropScreenTest {
         assertFalse(shows(above))
         assertTrue(shows(moreButton(R.string.action_capture_more_left)))
         assertTrue(shows(moreButton(R.string.action_capture_more_right)))
+        // Equally wide, whatever their labels.
+        assertEquals(
+            moreButton(R.string.action_capture_more_right).width,
+            moreButton(R.string.action_capture_more_left).width
+        )
     }
 
     @Test
@@ -712,12 +840,13 @@ class CropScreenTest {
 
     /** Cancel, Copy and the share button of the main bar. */
     private fun barButtons(): List<TextView> {
-        val share = findText(screen, context.getString(R.string.action_share_full))!!
+        val share = findText(screen, context.getString(R.string.action_share))!!
         val bar = share.parent as ViewGroup
-        fun inBar(label: Int): TextView =
+        fun inBar(label: Int, description: Int = label): TextView =
             (0 until bar.childCount).map { bar.getChildAt(it) as TextView }
-                .first { it.text.toString() == context.getString(label) }
-        return listOf(inBar(R.string.action_cancel), inBar(R.string.action_copy), share)
+                .first { it.text.toString() == context.getString(label) || it.contentDescription == context.getString(description) }
+        // (Copy shows its icon alone beside Copy text, when that is on.)
+        return listOf(inBar(R.string.action_save), inBar(R.string.action_copy, R.string.action_copy_image), share)
     }
 
     private fun tapOn(x: Float, y: Float) = onMain {

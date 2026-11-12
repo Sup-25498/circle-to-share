@@ -60,6 +60,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     // (when the screenshot arrives) yields a sparse, occlusion-clipped set.
     private var pendingSnap: eu.woshicado.circletoshare.crop.SnapBounds? = null
     private var pendingAreas: List<Rect> = emptyList()
+    // The text on screen at the same moment, for "Copy text".
+    private var pendingText: eu.woshicado.circletoshare.text.PendingScreenText? = null
     // Whether the picture taken over from the bubble's tool is a scrollshot.
     private var pendingScrollshot = false
     // When the session was shown — anchor for the zoom-settle deadline below.
@@ -245,6 +247,20 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             ?.collectSnapBounds()
         // The same for what scrolls sideways, for the "↔" button.
         pendingAreas = ScreenshotAccessibilityService.instance?.sidewaysAreasNow() ?: emptyList()
+        // And the text, given this long of the same moment: as the session's
+        // window comes up, the app's nodes are hidden from the service too, and
+        // a walk still under way gets no further (the bubble's and tile's
+        // overlay hides nothing; their walk carries on in the background). Not
+        // over a picture the bubble's tool has open: that one's text is taken
+        // over with it, below.
+        if (ScreenshotAccessibilityService.instance?.openOverlayScreenshot() == null) {
+            pendingText = ScreenshotAccessibilityService.instance?.collectScreenText()
+            val waitStart = SystemClock.uptimeMillis()
+            pendingText?.awaitFor(SESSION_TEXT_MS)
+            if (pendingText != null) {
+                android.util.Log.d("CircleToShare", "screen text: show waited ${SystemClock.uptimeMillis() - waitStart} ms")
+            }
+        }
         if (!watchingScreen) {
             watchingScreen = true
             context.registerReceiver(
@@ -292,6 +308,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         if (reuse != null) {
             pendingSnap = service.openOverlaySnapBounds()
             pendingAreas = service.openOverlaySidewaysAreas()
+            pendingText?.cancel()
+            pendingText = service.takeOverlayText()
             pendingScrollshot = service.openOverlayIsGrown()
         }
         // "Capture more" is the accessibility service's to do (see
@@ -426,6 +444,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         fallbackSystemShot = null
         pendingSnap = null
         pendingAreas = emptyList()
+        pendingText?.cancel()
+        pendingText = null
         pendingScrollshot = false
         awaitingOwnCapture = false
         // Drop the frozen image now, so the next show doesn't flash this
@@ -510,11 +530,11 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             "assist shot ${software.width}x${software.height}, " +
                 "snap rects: ${pendingSnap?.rects?.size ?: 0}"
         )
-        cropScreen.setBitmap(software, pendingSnap, pendingScrollshot)
+        cropScreen.setBitmap(software, pendingSnap, pendingScrollshot, pendingText)
     }
 
     /**
-     * EXPERIMENTAL. Scrolling the app underneath takes a drag only the
+     * Scrolling the app underneath takes a drag only the
      * accessibility service can make, and this window off the screen for it
      * to land on the app. So the service takes the tool over from here: this
      * session closes, and the service's own overlay — the bubble's, which
@@ -594,6 +614,10 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
 
     private companion object {
         const val NO_SHOW = -1
+
+        // How long a show waits for the screen's text to be read (see openTool):
+        // as long as the walk had when it ran on this thread outright.
+        const val SESSION_TEXT_MS = 400L
 
         // How long a message shown in place of the tool stays up.
         const val MESSAGE_MS = 5000L

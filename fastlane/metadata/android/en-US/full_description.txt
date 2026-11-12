@@ -11,6 +11,7 @@ How to open it (use any of them):
 * Corner swipe (assistant-powered): swipe up from a bottom corner.
 * Quick Settings tile: tap it and the shade closes before the capture.
 * Floating bubble: an optional, always-on-screen button you can tap from any app and drag out of the way.
+* App shortcut or automation app: long-press the app icon and tap "Capture", pin it to the home screen, or let an automation app (Tasker, Macrodroid, ...) invoke a screen capture.
 
 Highlights:
 
@@ -18,8 +19,9 @@ Highlights:
 * Nothing is saved to your device (unless you tap Save).
 * QR codes in the capture are highlighted, and can be opened, copied, or shared.
 * Optional snapping: crop edges align with the buttons, cards and images that were on screen.
-* Scrollshots (experimental): "More above"/"More below" in the crop tool to scroll the app underneath.
+* Scrollshots: "More above"/"More below" in the crop tool to scroll the app underneath.
+* Copy text: Put the text inside the selection in the clipboard, read from the screen or on-device OCR.
 
-Accessibility service: the Quick Settings tile, the floating bubble, snapping, scrollshots, and a capture fallback for devices that don't hand screenshots to third-party assistants use Android's AccessibilityService API. It is optional and off until you agree to the in-app disclosure and switch it on. It captures the screen and reads element positions at the moment you trigger a capture, and scrolls the app underneath only when you tap "More above" or "More below". The list of your apps on the scrollshot settings page is read on your device when you open it and is not stored.
+Accessibility service: the Quick Settings tile, the floating bubble, snapping, scrollshots, Copy text, and a capture fallback for devices that don't hand screenshots to third-party assistants use Android's AccessibilityService API. It is optional and off until you agree to the in-app disclosure and switch it on. At the moment you trigger a capture it takes the screenshot and reads the positions of the elements on screen (for snapping) and their text with its layout (for Copy text); the text is kept in memory only while the crop tool is open and is used only when you tap Copy text. It scrolls the app underneath only when you tap "More above" or "More below". Everything is processed on your device; nothing is stored or sent anywhere. The list of your apps on the scrollshot settings page is read on your device when you open it and is not stored.
 
 Note: screens that block screenshots (banking apps, DRM video) cannot be captured.
