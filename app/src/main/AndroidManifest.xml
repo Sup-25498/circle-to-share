@@ -49,6 +49,39 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Makes a "Capture" shortcut for shortcut pickers (automation apps,
+             launchers): see CaptureShortcutActivity. -->
+        <activity
+            android:name=".capture.CaptureShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/shortcut_capture_long"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Opens the crop tool for other apps (automation, the app shortcut):
+             see CaptureTriggerActivity. -->
+        <activity
+            android:name=".capture.CaptureTriggerActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="eu.woshicado.circletoshare.CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <!-- Accessibility disclosure and consent, shown by MainActivity. -->
@@ -122,6 +155,24 @@
           held by the system, not requested by us — it only restricts who may
           bind this service.
         -->
+        <!-- Started by SystemUI on a tap on the tile, Android 15+ (see TileCaptureActivity). -->
+        <activity
+            android:name=".tile.TileCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Started by the tile only to collapse its panel (see CollapseActivity). -->
+        <activity
+            android:name=".tile.CollapseActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <service
             android:name=".tile.CaptureTileService"
             android:exported="true"

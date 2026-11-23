@@ -697,6 +697,38 @@ class CropOverlayViewGestureTest {
     }
 
     @Test
+    fun aLongPressOnACornerOrAnEdgeGrip_doesNotCopy() {
+        onMain { view.freeform = false }
+        stroke(200f to 600f, 800f to 1300f)
+        val grip = dp(14f).toFloat() // inside the box, within the grip's reach
+
+        hold(200f + grip, 600f + grip) // the top-left corner
+        hold(800f - grip, 950f) // the right edge
+        hold(500f, 1300f - grip) // the bottom edge
+        assertEquals("pressing a grip before dragging it is not a copy", 0, events.longPressInside)
+
+        hold(500f, 950f) // the middle
+        assertEquals(1, events.longPressInside)
+    }
+
+    /** A finger held still at ([x], [y]) past the long-press time, then lifted. */
+    private fun hold(x: Float, y: Float) {
+        // Real time: the long-press timer is what is under test.
+        val downTime = SystemClock.uptimeMillis()
+        onMain {
+            clock = downTime
+            send(downTime, MotionEvent.ACTION_DOWN, x to y)
+        }
+        SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 400L)
+        instrumentation.waitForIdleSync()
+        onMain {
+            clock = SystemClock.uptimeMillis()
+            send(downTime, MotionEvent.ACTION_UP, x to y)
+            clock += 1000
+        }
+    }
+
+    @Test
     fun wobblyLongPressInsideSmallSelection_copiesTheWholeBox() {
         val before = selectSmallBox()
         val cx = before.exactCenterX()
@@ -746,6 +778,44 @@ class CropOverlayViewGestureTest {
         stroke(800f to 1300f, 850f to 1400f, 900f to 1500f)
 
         assertRectNear(Rect(200, 600, 900, 1500), cropRect())
+    }
+
+    @Test
+    fun draggingAnEdge_changesThatDimensionOnly() {
+        onMain { view.freeform = false }
+        stroke(200f to 600f, 800f to 1300f)
+
+        // The right edge, halfway down: wider, same height.
+        stroke(800f to 950f, 850f to 970f, 1000f to 990f)
+        assertRectNear(Rect(200, 600, 1000, 1300), cropRect())
+
+        // The top edge, from just outside the box: taller, same width.
+        stroke(600f to 590f, 600f to 500f, 600f to 400f)
+        assertRectNear(Rect(200, 400, 1000, 1300), cropRect())
+    }
+
+    @Test
+    fun draggingAnEdgePastTheOppositeOne_flipsTheBox() {
+        onMain { view.freeform = false }
+        stroke(200f to 600f, 800f to 1300f)
+
+        stroke(205f to 950f, 400f to 950f, 700f to 950f, 1000f to 950f)
+
+        assertRectNear(Rect(800, 600, 1000, 1300), cropRect())
+    }
+
+    @Test
+    fun draggingTheMiddleOfASmallBox_stillMovesIt() {
+        val before = selectSmallBox()
+
+        // From its center, well past the slop: every edge is near, but the
+        // middle half is for moving.
+        stroke(*Array(21) { i -> before.exactCenterX() + i * 10f to before.exactCenterY() })
+
+        val after = cropRect()!!
+        assertEquals(before.width(), after.width())
+        assertEquals(before.height(), after.height())
+        assertTrue("moved right", after.left > before.left)
     }
 
     @Test

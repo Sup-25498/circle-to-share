@@ -1,0 +1,5 @@
+* Copy text: a button to put the selection's text on the clipboard, read from the screen or with on-device OCR
+* Save a full screenshot or scrollshot without a crop box; Close is an X in the top corner
+* Crop box edges can be dragged, not only corners
+* Quick Settings tile opens faster and closes the shade on more devices
+* App shortcut and an activity for Tasker, MacroDroid and the like

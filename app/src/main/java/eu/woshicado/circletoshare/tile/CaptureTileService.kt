@@ -2,6 +2,7 @@ package eu.woshicado.circletoshare.tile
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Handler
@@ -41,6 +42,11 @@ class CaptureTileService : TileService() {
         // How long after asking for an unlock a further tap is taken for the
         // same request. The prompt covers the tile well within this.
         private const val UNLOCK_PROMPT_DEBOUNCE_MS = 1000L
+
+        /** How long to give the keyguard to be gone after an unlock. */
+        internal fun keyguardExitGraceMs(context: Context): Long =
+            animationSettleMs(context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS)
+                .coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
     }
 
     private val ui = Handler(Looper.getMainLooper())
@@ -53,6 +59,9 @@ class CaptureTileService : TileService() {
     private var unlockPromptedAt = Long.MIN_VALUE
 
     override fun onStopListening() {
+        // The panel is closing: a capture may be waiting for that (see
+        // collapseByActivity).
+        ScreenshotAccessibilityService.instance?.tilePanelClosed()
         // The unlock collapses the shade, which is exactly what unbinds us —
         // don't leave a posted retry holding this service alive to toast from
         // a dead context.
@@ -74,10 +83,22 @@ class CaptureTileService : TileService() {
             // newly added tile defaults to ACTIVE (highlighted), which would
             // wrongly read as "capture is on".
             state = Tile.STATE_INACTIVE
+            // From Android 15 a tap starts TileCaptureActivity, SystemUI itself:
+            // no wait for this service to be bound (see there).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                activityLaunchForClick = PendingIntent.getActivity(
+                    this@CaptureTileService, 0,
+                    Intent(this@CaptureTileService, TileCaptureActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            }
             updateTile()
         }
     }
 
+    /** Up to Android 14, and until the tile has been bound once since SystemUI
+     *  started (for its activity, see onStartListening). */
     override fun onClick() {
         // Handle "no accessibility service" here, before any unlock prompt:
         // startActivityAndCollapse only works while the click's window token is
@@ -119,7 +140,10 @@ class CaptureTileService : TileService() {
             Toast.makeText(this, ScreenshotAccessibilityService.whyNotRunning(this), Toast.LENGTH_LONG).show()
             return
         }
-        when (service.triggerCaptureFromShade()) {
+        // Only a tap's own attempt can collapse the panel by an activity: by the
+        // retry after an unlock, SystemUI has taken the click's grant back
+        // (see onClick) — and the unlock has collapsed the panel anyway.
+        when (service.triggerCaptureFromShade(collapse = if (mayPromptUnlock) ::collapseByActivity else null)) {
             ScreenshotAccessibilityService.Refusal.NONE -> Unit
             ScreenshotAccessibilityService.Refusal.LOCKED ->
                 if (mayPromptUnlock) promptUnlockThenCapture() else notifyLocked()
@@ -145,14 +169,7 @@ class CaptureTileService : TileService() {
             // isKeyguardLocked() is still true — retrying immediately would be
             // refused again and drop the capture the user just authenticated
             // for. One grace period, then a single attempt that can't re-prompt.
-            ui.postDelayed(
-                { capture(mayPromptUnlock = false) },
-                animationSettleMs(
-                    this,
-                    baseMs = KEYGUARD_EXIT_GRACE_MS,
-                    offMs = KEYGUARD_EXIT_GRACE_OFF_MS
-                ).coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
-            )
+            ui.postDelayed({ capture(mayPromptUnlock = false) }, keyguardExitGraceMs(this))
         }
         // (A cancelled unlock never runs the block above.)
     }
@@ -162,9 +179,26 @@ class CaptureTileService : TileService() {
     private fun notifyLocked() =
         ScreenshotAccessibilityService.notify(this, R.string.error_tile_locked)
 
-    private fun openApp() {
-        val intent = Intent(this, MainActivity::class.java)
+    private fun openApp() = startAndCollapse(
+        Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    )
+
+    /**
+     * Collapse the panel the way any app's tile can: by starting an activity,
+     * one that shows nothing and is gone at once ([CollapseActivity]) — what
+     * ScreenshotTile does. For where SystemUI doesn't offer the accessibility
+     * action to close the shade (see triggerCaptureFromShade). False if the
+     * start failed, and the panel is still open.
+     */
+    private fun collapseByActivity(): Boolean = runCatching {
+        startAndCollapse(
+            Intent(this, CollapseActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        )
+    }.onFailure { android.util.Log.w("CircleToShare", "tile: collapse by activity failed", it) }.isSuccess
+
+    private fun startAndCollapse(intent: Intent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startActivityAndCollapse(
                 PendingIntent.getActivity(

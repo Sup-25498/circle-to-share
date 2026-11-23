@@ -84,6 +84,24 @@ class MainActivity : AppCompatActivity() {
             if (result.resultCode != RESULT_OK) turnOffUnconsentedService()
         }
 
+    // And to someone who agreed before the disclosure said the text on screen
+    // is read too (for "Copy text"), until they answer it — Back is no answer.
+    // A no keeps the service as it was; "Copy text" then reads the picture
+    // instead. The accessibility settings button offers it again.
+    private val disclosureForText =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (answered(result)) Prefs.setTextConsentAsked(this)
+        }
+    private val disclosureForTextBeforeSettings =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (answered(result)) Prefs.setTextConsentAsked(this)
+            openAccessibilitySettings()
+        }
+
+    private fun answered(result: androidx.activity.result.ActivityResult) =
+        result.resultCode == RESULT_OK ||
+            result.data?.getBooleanExtra(DisclosureActivity.EXTRA_DECLINED, false) == true
+
     // That second case is put to the user once per time the service is found
     // on, not on every resume: a "no" switches the service off, but the
     // setting that says so changes a moment later.
@@ -180,7 +198,11 @@ class MainActivity : AppCompatActivity() {
             openFirstAvailable(Intent(Settings.ACTION_LOCALE_SETTINGS))
         }
         findViewById<Button>(R.id.btn_accessibility_settings).setOnClickListener {
-            if (Prefs.hasAccessibilityConsent(this)) {
+            if (Prefs.hasAccessibilityConsent(this) && !Prefs.hasTextConsent(this)) {
+                disclosureForTextBeforeSettings.launch(
+                    Intent(this, DisclosureActivity::class.java).putExtra(DisclosureActivity.EXTRA_UPDATE, true)
+                )
+            } else if (Prefs.hasAccessibilityConsent(this)) {
                 openAccessibilitySettings()
             } else {
                 disclosureBeforeSettings.launch(Intent(this, DisclosureActivity::class.java))
@@ -319,6 +341,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupQrColorField()
+
+        findViewById<MaterialSwitch>(R.id.switch_copy_text).setOnCheckedChangeListener { view, checked ->
+            // (Before the guard, as the QR color: the formatting follows the switch.)
+            findViewById<View>(R.id.copy_text_markdown_group).visibility = if (checked) View.VISIBLE else View.GONE
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            copyTextSwitched(view, checked)
+        }
+        findViewById<MaterialSwitch>(R.id.switch_copy_text_markdown).setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            Prefs.setCopyTextMarkdown(this, checked)
+        }
 
         setupSupportButton(findViewById(R.id.btn_support))
         findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
@@ -529,6 +562,11 @@ class MainActivity : AppCompatActivity() {
         } else if (!Prefs.hasAccessibilityConsent(this) && !disclosureOffered) {
             disclosureOffered = true
             disclosureForRunningService.launch(Intent(this, DisclosureActivity::class.java))
+        } else if (!Prefs.hasTextConsent(this) && !Prefs.wasTextConsentAsked(this) && !disclosureOffered) {
+            disclosureOffered = true
+            disclosureForText.launch(
+                Intent(this, DisclosureActivity::class.java).putExtra(DisclosureActivity.EXTRA_UPDATE, true)
+            )
         }
 
         syncingSwitches = true
@@ -556,6 +594,10 @@ class MainActivity : AppCompatActivity() {
         val qr = Prefs.isQrDetectEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked = qr
         setQrColorRowVisible(qr)
+        val copyText = Prefs.isCopyTextEnabled(this)
+        findViewById<MaterialSwitch>(R.id.switch_copy_text).isChecked = copyText
+        findViewById<View>(R.id.copy_text_markdown_group).visibility = if (copyText) View.VISIBLE else View.GONE
+        findViewById<MaterialSwitch>(R.id.switch_copy_text_markdown).isChecked = Prefs.isCopyTextMarkdown(this)
         syncingSwitches = false
     }
 
@@ -616,21 +658,30 @@ class MainActivity : AppCompatActivity() {
     /**
      * The switch for the scrollshot buttons was set to [checked]. Switched
      * on — not found on: a rotation sets the switch too — they need the
-     * accessibility service, and are experimental: the first is refused
-     * like the bubble and snapping without it, the second said.
+     * accessibility service, and are refused like the bubble and snapping
+     * without it.
      */
     private fun scrollshotButtonsSwitched(switch: CompoundButton, checked: Boolean) {
         val switchedOn = checked && !Prefs.isCaptureMoreEnabled(this)
         if (switchedOn && refusedWithoutFallback(switch)) return
-        // Not on without its notice either (a screen on its way out cannot
-        // show one).
+        Prefs.setCaptureMoreEnabled(this, checked)
+    }
+
+    /**
+     * The Copy text switch was set to [checked]. Switched on — not found
+     * on, as above — it is experimental, and the notice says so.
+     */
+    private fun copyTextSwitched(switch: CompoundButton, checked: Boolean) {
+        val switchedOn = checked && !Prefs.isCopyTextEnabled(this)
+        // Not on without its notice (a screen on its way out cannot show
+        // one).
         if (switchedOn &&
-            !ExperimentalNoticeDialog.show(supportFragmentManager, ExperimentalNoticeDialog.Feature.SCROLLSHOT)
+            !ExperimentalNoticeDialog.show(supportFragmentManager, ExperimentalNoticeDialog.Feature.COPY_TEXT)
         ) {
             switch.isChecked = false
             return
         }
-        Prefs.setCaptureMoreEnabled(this, checked)
+        Prefs.setCopyTextEnabled(this, checked)
     }
 
     /** A switch for something that needs the accessibility service was set
