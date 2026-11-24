@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.database.ContentObserver
@@ -12,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
 import android.text.Editable
@@ -41,7 +43,9 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
+import eu.woshicado.circletoshare.share.ShareHelper
 import eu.woshicado.circletoshare.tile.CaptureTileService
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
@@ -96,6 +100,18 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (answered(result)) Prefs.setTextConsentAsked(this)
             openAccessibilitySettings()
+        }
+
+    // Where the save folder's provider is asked about it (see renderSaveDir),
+    // and the latest such asking: an older one's answer is not shown.
+    private val saveDirWorker = Executors.newSingleThreadExecutor { Thread(it, "save-dir") }
+    private var saveDirRender = 0
+
+    // Android's folder picker, for where Save puts images. Picking is the
+    // grant: the app may then write to that folder, and only to it.
+    private val pickSaveDir =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+            if (tree != null) saveDirPicked(tree)
         }
 
     private fun answered(result: androidx.activity.result.ActivityResult) =
@@ -332,6 +348,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<View>(R.id.btn_save_dir).apply {
+            readAsButton()
+            setOnClickListener {
+                // Opening where the images go now: the folder picked, else
+                // Pictures, the one Screenshots is in.
+                // (The picker takes a document, not a tree: the tree's own.)
+                val start = Prefs.getSaveDir(this@MainActivity)?.let { saved ->
+                    runCatching { ShareHelper.treeRoot(Uri.parse(saved)) }.getOrNull()
+                } ?: DocumentsContract.buildDocumentUri(ShareHelper.EXTERNAL_STORAGE, "primary:Pictures")
+                try {
+                    pickSaveDir.launch(start)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this@MainActivity, R.string.save_dir_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        findViewById<View>(R.id.btn_save_dir_reset).setOnClickListener {
+            Prefs.getSaveDir(this)?.let(::releaseSaveDir)
+            Prefs.setSaveDir(this, null)
+            renderSaveDir()
+        }
+        findViewById<MaterialSwitch>(R.id.switch_save_per_app).setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            Prefs.setSavePerApp(this, checked)
+        }
+
         findViewById<MaterialSwitch>(R.id.switch_qr).setOnCheckedChangeListener { _, checked ->
             // (Before the guard: the color follows the switch however it
             // came to be where it is.)
@@ -499,6 +541,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        saveDirWorker.shutdownNow()
+        super.onDestroy()
+    }
+
     override fun onStop() {
         contentResolver.unregisterContentObserver(setupObserver)
         // Leaving mid-drag (rotation, another window taking over) may not end
@@ -591,6 +638,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_capture_more).isChecked =
             Prefs.isCaptureMoreEnabled(this)
 
+        findViewById<MaterialSwitch>(R.id.switch_save_per_app).isChecked = Prefs.isSavePerApp(this)
+        renderSaveDir()
+
         val qr = Prefs.isQrDetectEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked = qr
         setQrColorRowVisible(qr)
@@ -599,6 +649,53 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.copy_text_markdown_group).visibility = if (copyText) View.VISIBLE else View.GONE
         findViewById<MaterialSwitch>(R.id.switch_copy_text_markdown).isChecked = Prefs.isCopyTextMarkdown(this)
         syncingSwitches = false
+    }
+
+    /** Keep the folder [tree] the user picked for Save, and give up the one
+     *  picked before: Android grants an app only so many folders. */
+    private fun saveDirPicked(tree: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(tree, SAVE_DIR_ACCESS)
+        } catch (e: SecurityException) {
+            Toast.makeText(this, R.string.save_dir_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        val before = Prefs.getSaveDir(this)
+        Prefs.setSaveDir(this, tree.toString())
+        if (before != null && before != tree.toString()) releaseSaveDir(before)
+        renderSaveDir()
+    }
+
+    private fun releaseSaveDir(tree: String) {
+        runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(tree), SAVE_DIR_ACCESS) }
+    }
+
+    /** Where Save puts images, under its row — and whether it can: a
+     *  folder deleted, or its card taken out, is saved around, not into.
+     *  That takes asking the folder's provider, which may be slow (a card,
+     *  one that goes online): in the background, said when known. */
+    private fun renderSaveDir() {
+        val tree = Prefs.getSaveDir(this)?.let(Uri::parse)
+        val summary = findViewById<TextView>(R.id.save_dir_summary)
+        findViewById<View>(R.id.btn_save_dir_reset).visibility = if (tree != null) View.VISIBLE else View.GONE
+        val render = ++saveDirRender
+        if (tree == null) {
+            summary.text = getString(R.string.save_dir_default)
+            return
+        }
+        // Its path at once, where the URI has it, until the provider has said.
+        summary.text = ShareHelper.saveDirPath(tree) ?: ""
+        if (saveDirWorker.isShutdown) return
+        saveDirWorker.execute {
+            val name = ShareHelper.describeSaveDir(this, tree)
+            val text = when {
+                !ShareHelper.isSaveDirUsable(this, tree) ->
+                    if (name != null) getString(R.string.save_dir_unusable, name)
+                    else getString(R.string.save_dir_unusable_unnamed)
+                else -> name ?: tree.toString()
+            }
+            runOnUiThread { if (render == saveDirRender && !isDestroyed) summary.text = text }
+        }
     }
 
     /** The two setup steps' status lines, and the section's header after
@@ -859,6 +956,9 @@ class MainActivity : AppCompatActivity() {
         const val STATE_DISCLOSURE_OFFERED = "disclosure_offered"
         const val STATE_SETUP_OPENED = "setup_opened_by_hand"
         const val STATE_SETUP_WAS_DONE = "setup_was_done"
+
+        private const val SAVE_DIR_ACCESS =
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
         val WATCHED_SETTINGS = listOf(
             VOICE_INTERACTION_SERVICE,

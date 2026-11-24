@@ -90,6 +90,17 @@
     <string name="crop_gestures_title"><b>Gestures:</b></string>
     <string name="crop_gestures">• Double-tap inside the selection: <b>share</b>\n• Long-press inside the selection: <b>copy</b>\n• Double-tap with nothing selected: <b>close</b></string>
     <string name="crop_tool_title">Crop tool</string>
+    <string name="saving_title">Saving</string>
+    <string name="save_dir">Save location</string>
+    <string name="save_dir_default">Pictures/Screenshots (default)</string>
+    <!-- %1$s the folder picked, as "Pictures/Notes". -->
+    <string name="save_dir_unusable">%1$s can\'t be written to any more. Saving to Pictures/Screenshots until resolved.</string>
+    <string name="save_dir_unusable_unnamed">The folder you picked can\'t be written to any more. Saving to Pictures/Screenshots until resolved.</string>
+    <string name="save_dir_reset">Reset to default: Pictures/Screenshots</string>
+    <string name="save_dir_note">Where to put saved screenshots. Circle to Share can only access the chosen directory.</string>
+    <string name="save_dir_failed">Couldn\'t use that folder. Pick another one.</string>
+    <string name="switch_save_per_app">A folder per app</string>
+    <string name="switch_save_per_app_note">Put screenshots into a unique subfolder per app.</string>
     <string name="extras_title">Extras</string>
     <string name="experimental_title">Experimental</string>
     <string name="experimental_note">Still being tested. Please report anything that misbehaves.</string>
@@ -155,7 +166,11 @@
     <string name="text_copied">Text copied</string>
     <string name="text_none">No text found</string>
     <string name="text_reading">Still reading the screen\'s text…</string>
-    <string name="saved">Saved to Screenshots</string>
+    <!-- %1$s the folder, as "Screenshots", "Screenshots/Chrome" or "Pictures/Notes". -->
+    <string name="saved">Saved to %1$s</string>
+    <!-- In "Saved to %1$s", for a folder whose name can't be read. -->
+    <string name="saved_folder_unnamed">the folder you chose</string>
+    <string name="saving">Saving…</string>
     <string name="action_view">View</string>
 
     <string name="error_no_capture">Couldn\'t get a screenshot. Enable the fallback in the Circle to Share app, or turn on \"Use screen data\" in assistant settings.</string>
@@ -172,7 +187,7 @@
     <string name="disclosure_access_title">What it accesses</string>
     <string name="disclosure_access_body">• A screenshot of your screen at the moment you trigger a capture.\n\n• The positions and sizes of the elements on screen at that same moment, while \"Snap to screen content\" is switched on.\n\n• The text on screen at that same moment, with how it is laid out (headings, lists, tables), while \"Copy text\" is switched on, so that it can copy the part you select as formatted text.\n\n• Notices from the system that a window has opened or changed, with the window\'s title and the app it belongs to, and the positions of system windows to recognize the lock screen, the power menu and the notification shade, so the floating button and the crop tool get out of their way.</string>
     <string name="disclosure_use_title">How it is used</string>
-    <string name="disclosure_use_body">• Everything is processed on this device, in memory, to show you the crop tool. The text on screen is kept only while the crop tool is open and is used only when you tap Copy text.\n\n• The part you share or copy is written to the app\'s private cache so the receiving app can read it. Files older than an hour are deleted the next time you capture.\n\n• An image leaves Circle to Share only when you tap Share or Copy, and only to the app you choose (Copy text puts the text of your selection on the clipboard instead), or when you tap Save, which puts it in your gallery (below Screenshots). The app has no internet permission.\n\n• The service never taps, types or changes settings for you. Its only two actions are (1) closing the notification shade when you use the Quick Settings tile; (2) simulating a swipe gesture when using the scrollshot feature. For per-app settings, the app requests the installed app list when that submenu is opened.</string>
+    <string name="disclosure_use_body">• Everything is processed on this device, in memory, to show you the crop tool. The text on screen is kept only while the crop tool is open and is used only when you tap Copy text.\n\n• The part you share or copy is written to the app\'s private cache so the receiving app can read it. Files older than an hour are deleted the next time you capture.\n\n• An image leaves Circle to Share only when you tap Share or Copy, and only to the app you choose (Copy text puts the text of your selection on the clipboard instead), or when you tap Save, which puts it in your gallery (below Screenshots, or in the folder you chose). With \"A folder per app\" switched on, the name of the app a screenshot shows names the folder it is saved in; that app is the one in front at the moment of capture (with the assistant alone, as Android tells the assistant). The app has no internet permission.\n\n• The service never taps, types or changes settings for you. Its only two actions are (1) closing the notification shade when you use the Quick Settings tile; (2) simulating a swipe gesture when using the scrollshot feature. For per-app settings, the app requests the installed app list when that submenu is opened.</string>
     <string name="disclosure_choice_title">Your choice</string>
     <string name="disclosure_choice_body">Tap Agree to allow this. You then switch the service on in Android\'s accessibility settings, and can switch it off there at any time.\n\nTap No thanks to keep using Circle to Share with the assistant gesture only. The tile, the floating button and snapping stay off, and a service that is already on is switched off.</string>
     <string name="disclosure_agree">Agree</string>

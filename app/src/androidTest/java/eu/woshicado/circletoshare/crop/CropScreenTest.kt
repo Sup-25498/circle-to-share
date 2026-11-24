@@ -838,6 +838,37 @@ class CropScreenTest {
         assertFalse(shows(below))
     }
 
+    @Test
+    fun whileDelivering_theButtonsTakeNoTaps() {
+        val delivered = ArrayList<Delivery>()
+        val asked = ArrayList<CropScreen.More>()
+        onMain {
+            screen.callbacks = object : CropScreen.Callbacks {
+                override fun onDeliver(action: Delivery, rect: Rect?) {
+                    delivered += action
+                }
+                override fun onCancel() {}
+            }
+            screen.onCaptureMore = { asked += it }
+            layOut()
+        }
+        val bar = barButtons().last().parent as ViewGroup
+        // Save, Copy, Copy text, Share; and a More button.
+        val buttons = (0 until bar.childCount).map { bar.getChildAt(it) } +
+            moreButton(R.string.action_capture_more_above)
+
+        onMain { screen.setDelivering(true) }
+        onMain { buttons.forEach { it.performClick() } }
+        assertEquals(emptyList<Delivery>(), delivered)
+        assertEquals(emptyList<CropScreen.More>(), asked)
+
+        // Over (it failed, say): they do again. (Nothing selected: no crop
+        // remembered.)
+        onMain { screen.setDelivering(false) }
+        onMain { barButtons().first().performClick() }
+        assertEquals(listOf(Delivery.SAVE), delivered)
+    }
+
     /** Cancel, Copy and the share button of the main bar. */
     private fun barButtons(): List<TextView> {
         val share = findText(screen, context.getString(R.string.action_share))!!

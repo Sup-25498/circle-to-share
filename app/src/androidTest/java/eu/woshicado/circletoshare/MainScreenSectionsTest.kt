@@ -28,6 +28,7 @@ class MainScreenSectionsTest {
     private var qrWas = true
     private var buttonsWere: Boolean? = null
     private var triggersWere = true
+    private var copyTextWas = false
 
     @Before
     fun remember() {
@@ -35,6 +36,7 @@ class MainScreenSectionsTest {
         // (Stored or not: one of the tests is about what holds when not.)
         buttonsWere = prefs().takeIf { it.contains("capture_more") }?.getBoolean("capture_more", false)
         triggersWere = Prefs.isTriggersExpanded(context)
+        copyTextWas = Prefs.isCopyTextEnabled(context)
     }
 
     private fun prefs() = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
@@ -43,6 +45,7 @@ class MainScreenSectionsTest {
     fun restore() {
         Prefs.setQrDetectEnabled(context, qrWas)
         Prefs.setTriggersExpanded(context, triggersWere)
+        Prefs.setCopyTextEnabled(context, copyTextWas)
         prefs().edit().apply {
             buttonsWere?.let { putBoolean("capture_more", it) } ?: remove("capture_more")
         }.commit()
@@ -253,13 +256,11 @@ class MainScreenSectionsTest {
 
     @Test
     fun switchingAnExperimentalFeatureOn_saysWhatThatMeans_andWhereToReport() {
-        Prefs.setCaptureMoreEnabled(context, false)
+        Prefs.setCopyTextEnabled(context, false)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             assertNull(scenario.notice())
             scenario.onActivity {
-                // (A test cannot have the accessibility service running.)
-                it.fallbackCheck = { true }
-                val switch = it.findViewById<MaterialSwitch>(R.id.switch_capture_more)
+                val switch = it.findViewById<MaterialSwitch>(R.id.switch_copy_text)
                 switch.performClick()
                 assertEquals(true, switch.isChecked)
                 // Off and on again in the same breath finds the first notice.
@@ -267,13 +268,13 @@ class MainScreenSectionsTest {
                 switch.performClick()
             }
             // On straight away: the notice asks nothing.
-            assertEquals(true, Prefs.isCaptureMoreEnabled(context))
+            assertEquals(true, Prefs.isCopyTextEnabled(context))
             val notice = scenario.notice()
             assertNotNull(notice)
             scenario.onActivity { activity ->
                 val message = notice!!.dialog!!.findViewById<TextView>(android.R.id.message)
                 val text = message.text as android.text.Spanned
-                assertEquals(true, text.contains("\"" + activity.getString(R.string.switch_scrollshot) + "\""))
+                assertEquals(true, text.contains("\"" + activity.getString(R.string.switch_copy_text) + "\""))
                 // (Paragraphs, and a list: not one run of text.)
                 assertEquals(true, text.contains("\n\nSo that") && text.contains("\n• "))
                 assertEquals(true, text.contains("Android " + android.os.Build.VERSION.RELEASE))
@@ -302,16 +303,16 @@ class MainScreenSectionsTest {
 
     @Test
     fun theNotice_isOnlyForSwitchingOn_notForBeingOn_norForSwitchingOff() {
-        Prefs.setCaptureMoreEnabled(context, true)
+        Prefs.setCopyTextEnabled(context, true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             assertNull(scenario.notice())
             // (A rotation sets the switch as well, to where it was.)
             scenario.recreate()
             assertNull(scenario.notice())
             scenario.onActivity {
-                it.findViewById<MaterialSwitch>(R.id.switch_capture_more).performClick()
+                it.findViewById<MaterialSwitch>(R.id.switch_copy_text).performClick()
             }
-            assertEquals(false, Prefs.isCaptureMoreEnabled(context))
+            assertEquals(false, Prefs.isCopyTextEnabled(context))
             assertNull(scenario.notice())
         }
     }

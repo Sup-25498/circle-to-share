@@ -142,6 +142,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
     // the tool closes or shows another picture. And that copy while it runs.
     private var screenText: PendingScreenText? = null
     private var textCopy: TextCopy.Job? = null
+    // True from a Share or Copy until its image is written (see
+    // setDelivering): a second tap meanwhile does nothing.
+    private var delivering = false
     private val noticeGone = Runnable { noticeView.visibility = View.GONE }
 
     init {
@@ -257,18 +260,18 @@ class CropScreen(context: Context) : FrameLayout(context) {
             context.getString(R.string.action_capture_more_above), R.drawable.ic_arrow_upward,
             filled = false
         ) {
-            onCaptureMore?.invoke(More.ABOVE)
+            if (!delivering) onCaptureMore?.invoke(More.ABOVE)
         }
         moreBelowButton = pillButton(
             context.getString(R.string.action_capture_more_below), R.drawable.ic_arrow_downward,
             filled = false
         ) {
-            onCaptureMore?.invoke(More.BELOW)
+            if (!delivering) onCaptureMore?.invoke(More.BELOW)
         }
         // Between the two, the icon alone: what it does is a mode, not a
         // step, and a word for it would make the row too wide for one line.
         moreSidewaysButton = pillButton("", R.drawable.ic_swap_horiz, filled = false) {
-            onCaptureSideways?.invoke()
+            if (!delivering) onCaptureSideways?.invoke()
         }.apply {
             contentDescription = context.getString(R.string.action_capture_sideways)
             compoundDrawablePadding = 0
@@ -453,6 +456,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
         text: PendingScreenText? = null
     ) {
         this.scrollshot = scrollshot
+        setDelivering(false)
         dropText()
         screenText = text
         // Apply the current crop-gesture preference (freeform circle vs. box).
@@ -503,7 +507,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
      * close ([Callbacks.onCancel]); with [onTap], a touch on the message
      * itself runs that instead. Undone by [setBitmap] and [clear].
      */
-    fun showMessage(message: CharSequence, onTap: (() -> Unit)? = null) {
+    fun showMessage(message: CharSequence, cancelable: Boolean = true, onTap: (() -> Unit)? = null) {
         // Nothing behind the message — not the black the picture stood on,
         // if there was one: the screen underneath shows through instead.
         background = null
@@ -522,7 +526,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
         hintView.setOnClickListener(onTap?.let { tap -> View.OnClickListener { tap() } })
         hintView.isClickable = onTap != null
         hintView.visibility = View.VISIBLE
-        setOnClickListener { callbacks?.onCancel() }
+        // Not [cancelable]: a touch is taken and does nothing — the message
+        // is to stay until it is replaced (Back still closes).
+        setOnClickListener { if (cancelable) callbacks?.onCancel() }
     }
 
     /** Drop the frozen screenshot and hide the UI — the reverse of [setBitmap].
@@ -530,6 +536,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
      *  the previous session's image. */
     fun clear() {
         sidewaysUnavailable = false
+        setDelivering(false)
         if (pickingArea) leavePicking()
         background = null
         currentBitmap = null
@@ -594,6 +601,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
     /** "More left" or "More right": in a sideways run a step of it; over a
      *  selection, the start of one from it. */
     private fun sideways(more: More) {
+        if (delivering) return
         val sidewaysRun = More.LEFT in captureMoreChoices || More.RIGHT in captureMoreChoices
         if (sidewaysRun) return onCaptureMore?.invoke(more) ?: Unit
         val area = cropView.getCropRect() ?: return
@@ -820,7 +828,23 @@ class CropScreen(context: Context) : FrameLayout(context) {
         copyTextButton.isEnabled = textCopy == null
     }
 
+    /** While [on], what was asked for is being written (see
+     *  ShareHelper.deliver): the buttons — the "More" ones too: a step would
+     *  take the picture away — are dimmed and take no taps, and neither do
+     *  the gestures that share or copy. Closing still works. A Copy text
+     *  still reading is called off: done, it would close the tool, and the
+     *  share or copy with it. */
+    fun setDelivering(on: Boolean) {
+        delivering = on
+        if (on) cancelTextCopy()
+        val alpha = if (on) 0.5f else 1f
+        buttonBar.alpha = alpha
+        moreRow.alpha = alpha
+        sideRow.alpha = alpha
+    }
+
     private fun deliver(action: Delivery) {
+        if (delivering) return
         val rect = cropView.getCropRect()
         rememberCrop(rect)
         callbacks?.onDeliver(action, rect)
@@ -841,6 +865,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
      *  whole screen's without one — and the tool closes; or, where there is
      *  no text, it says so and stays. */
     private fun copyText() {
+        if (delivering) return
         val bitmap = currentBitmap ?: return
         val selection = cropView.getCropRect()
         val rect = selection ?: Rect(0, 0, bitmap.width, bitmap.height)
@@ -874,10 +899,15 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private fun dropText() {
         removeCallbacks(noticeGone)
         noticeView.visibility = View.GONE
-        textCopy?.cancel()
-        textCopy = null
+        cancelTextCopy()
         screenText?.cancel()
         screenText = null
+    }
+
+    /** Call off a Copy text still reading, if there is one. */
+    private fun cancelTextCopy() {
+        textCopy?.cancel()
+        textCopy = null
         copyTextButton.isEnabled = true
         copyTextButton.alpha = 1f
     }

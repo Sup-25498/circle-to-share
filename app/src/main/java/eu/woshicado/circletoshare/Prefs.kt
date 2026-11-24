@@ -24,6 +24,8 @@ object Prefs {
     private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
     private const val KEY_CAPTURE_MORE_STEP_SIDEWAYS = "capture_more_step_sideways"
     private const val KEY_CAPTURE_MORE_HANDLES = "capture_more_handles"
+    private const val KEY_SAVE_DIR = "save_dir"
+    private const val KEY_SAVE_PER_APP = "save_per_app"
 
     // The apps with settings of their own (see setAppOverride), and where
     // each of an app's is kept.
@@ -256,6 +258,30 @@ object Prefs {
     fun setSnapToEdgesEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_SNAP_EDGES, enabled).apply()
+    }
+
+    /**
+     * The folder Save puts images in: a document tree the user picked (see
+     * MainActivity), as its URI; null = Pictures/Screenshots, as always.
+     * Picking it is the grant — no permission of the app's own — and saving
+     * goes back to Pictures/Screenshots whenever the folder can't be used.
+     */
+    fun getSaveDir(context: Context): String? =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(KEY_SAVE_DIR, null)
+
+    fun setSaveDir(context: Context, uri: String?) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_SAVE_DIR, uri).apply()
+    }
+
+    /** True = Save puts each image in a folder named after the app it is of,
+     *  inside the save folder. Off by default. */
+    fun isSavePerApp(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(KEY_SAVE_PER_APP, false)
+
+    fun setSavePerApp(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SAVE_PER_APP, enabled).apply()
     }
 
     /** Whether the settings screen shows its "How to open it" section

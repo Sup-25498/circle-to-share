@@ -26,7 +26,7 @@ Or grab the APK from the [latest release](https://github.com/woshicado/circle-to
 
 Trigger it → the screen freezes → circle what you want → **Share**, **Copy** or **Save**.
 A shared or copied crop lives only in the app's private cache (auto-cleaned after an hour);
-only **Save** puts it in your gallery (`Pictures/Screenshots`).
+only **Save** puts it in a folder of your choice (default: `Pictures/Screenshots`).
 
 The loop's outline becomes a crop box you can resize and reposition. Prefer dragging a rectangle directly? Turn off **Circle to crop** in the app.
 
@@ -53,7 +53,7 @@ Use any of these (anything not assistant-powered will need the accessibility fal
 - The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
 - From Android 15 the tile hands SystemUI an activity to start on a tap (`Tile.setActivityLaunchForClick`), which closes the shade itself. The app shortcut and automation apps start a similar activity (`CaptureTriggerActivity`, exported, action `eu.woshicado.circletoshare.CAPTURE`) that does not send a close shade event first.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
-- **Save** adds the crop to `Pictures/Screenshots` through `MediaStore`, which needs no storage permission either.
+- **Save** adds the crop to `Pictures/Screenshots` through `MediaStore`, which needs no storage permission either. A different folder can be picked with Android's folder picker (Storage Access Framework, `ACTION_OPEN_DOCUMENT_TREE`). Save falls back to `Pictures/Screenshots` in case of failure.
 - **Scrollshots**: "More above" / "More below" ask the accessibility service to scroll the app underneath by an injected drag (`dispatchGesture`), take another screenshot and join it onto the picture by comparing rows of the two frames. A list of installed apps for per-app settings is read on the device when opening the per-app settings page.
 - **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture.
 - **Copy text** (experimental): while enabled, at the moment of capture, the *text* of the app windows on screen is read from the accessibility node tree and kept in memory while the crop tool is open. Tapping **Copy text** additionally runs OCR (PaddleOCR; on-device) over the selection.

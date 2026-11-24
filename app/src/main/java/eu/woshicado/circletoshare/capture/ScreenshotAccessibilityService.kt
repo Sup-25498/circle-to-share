@@ -55,7 +55,6 @@ import eu.woshicado.circletoshare.share.ShareHelper
 import eu.woshicado.circletoshare.text.PendingScreenText
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import java.io.IOException
 
 /**
  * Two jobs:
@@ -108,12 +107,37 @@ class ScreenshotAccessibilityService : AccessibilityService() {
          * With [openOnTap], the notice offers to view that saved image (the
          * toast can't: it takes no touches).
          */
-        fun notify(context: Context, messageRes: Int, openOnTap: Uri? = null) {
+        fun notify(context: Context, messageRes: Int, openOnTap: Uri? = null) =
+            notify(context, context.getString(messageRes), openOnTap)
+
+        fun notify(context: Context, message: String, openOnTap: Uri? = null) {
             val service = instance
             if (service != null) {
-                service.showNotice(context.getString(messageRes), openOnTap)
+                service.showNotice(message, openOnTap)
             } else {
-                Toast.makeText(context, messageRes, Toast.LENGTH_LONG).show()
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+
+        /**
+         * How a save went, said as [notify] says things — but, where the
+         * service runs, only when that is safe and seen (a save writes in
+         * the background: the bubble, the tile or the assistant may have
+         * been used again meanwhile, the screen locked): not over a capture,
+         * where the notice would be in its picture; not on the lock screen,
+         * where it would name the app; not in place of another notice. It
+         * waits its turn until then (see showSaveNotice). Never dropped, a
+         * failure least of all.
+         */
+        fun reportSave(context: Context, message: String, openOnTap: Uri?) {
+            val service = instance
+            if (service == null) {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                return
+            }
+            service.ui.post {
+                service.saveNotices.addLast(message to openOnTap)
+                service.showSaveNotice()
             }
         }
 
@@ -276,9 +300,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
     private var noticeView: View? = null
+    // A notice's time is up: the next save's may follow.
     private val removeNotice = Runnable {
-        noticeView?.let { runCatching { windowManager.removeView(it) } }
-        noticeView = null
+        dropNotice()
+        showSaveNotice()
     }
     private var overlayView: CropScreen? = null
 
@@ -301,15 +326,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     )
     private var overlayBitmap: Bitmap? = null
     private var bubbleDensityDpi = 0
-    private var overlaySnap: SnapBounds? = null
-    // The text on screen when the open overlay's picture was taken, for
-    // "Copy text", as it is being read (see collectScreenText); null for a
-    // picture a run has grown. Cancelled when the overlay goes, unless handed
-    // on (takeOverlayText, or the same picture presented again).
-    private var overlayText: PendingScreenText? = null
-    // What scrolled sideways when the open overlay's picture was taken (see
-    // sidewaysAreasNow); empty for a picture a run has grown.
-    private var overlayAreas: List<Rect> = emptyList()
+    // What was read off the screen with the open overlay's picture (see
+    // CaptureInfo). For a picture a run has grown: its snap bounds and app
+    // only, no text, no sideways areas. Its text is cancelled when the
+    // overlay goes, unless handed on (takeOverlayInfo, or the same picture
+    // presented again).
+    private var overlayInfo = CaptureInfo()
 
     // The "Capture more" run the open overlay's picture comes from, if it
     // was asked for — kept while the overlay is up so the next step carries
@@ -347,6 +369,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // bubble tap, the assistant session, etc. The bubble hides and stays hidden
     // while this is set, so it never lands in the shot or stacks over the tool.
     private var capturing = false
+    // Saves' notices not yet shown (see reportSave), oldest first.
+    private val saveNotices = ArrayDeque<Pair<String, Uri?>>()
 
     // Bumped when the assistant takes over (setCapturing(true)) so an in-flight
     // bubble-tap capture knows it was superseded and must not present its
@@ -680,6 +704,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         return front?.root?.packageName?.toString()
     }
 
+    /** The app a capture taken now is of, for a save into a folder per
+     *  app ([Prefs.isSavePerApp]); null with that off: no looking then. */
+    fun saveAppNow(): String? = if (Prefs.isSavePerApp(this)) frontAppPackage() else null
+
     /**
      * Whether to snap in a capture taken now: the general setting, or the
      * own one of the app in front, if it has one (see [Prefs.setAppOverride]).
@@ -868,7 +896,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 teardownOverlay()
                 if (overlayGen == bubbleCaptureGen) capturing = false
             }
+            // A notice too: it may name the app a screenshot was of (a save's
+            // into a folder per app), and its timer stops while the device
+            // sleeps — it would still be on the lock screen on waking.
+            if (!isScreenUsable()) dropNotice()
             if (shouldShowBubble()) addBubble() else removeBubble()
+            showSaveNotice()
         }
     }
 
@@ -919,7 +952,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * gone again by itself. It takes no focus, and no touches unless
      * [openOnTap] is given: then a tap on it opens that saved image.
      */
-    private fun showNotice(message: String, openOnTap: Uri? = null): Boolean = ui.post {
+    private fun showNotice(message: String, openOnTap: Uri? = null): Boolean =
+        ui.post { showNoticeNow(message, openOnTap) }
+
+    /** [showNotice], here and now: on the main thread. */
+    private fun showNoticeNow(message: String, openOnTap: Uri?) {
         dropNotice()
         val display = displayMetrics().bounds
         val notice = TextView(this).apply {
@@ -937,9 +974,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             if (openOnTap != null) {
                 setOnClickListener {
                     dropNotice()
-                    if (!ShareHelper.view(context, openOnTap)) {
-                        showNotice(getString(R.string.qr_open_failed))
-                    }
+                    if (ShareHelper.view(context, openOnTap)) showSaveNotice()
+                    else showNoticeNow(getString(R.string.qr_open_failed), null)
                 }
             }
         }
@@ -960,7 +996,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             title = message
         }
         // Guarded like addBubble: the window token dies with the service.
-        if (runCatching { windowManager.addView(notice, params) }.isFailure) return@post
+        if (runCatching { windowManager.addView(notice, params) }.isFailure) return
         noticeView = notice
         ui.postDelayed(removeNotice, if (openOnTap != null) NOTICE_ACTION_MS else NOTICE_MS)
     }
@@ -968,7 +1004,21 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** Take the notice down now, ahead of its timer. */
     private fun dropNotice() {
         ui.removeCallbacks(removeNotice)
-        removeNotice.run()
+        noticeView?.let { runCatching { windowManager.removeView(it) } }
+        noticeView = null
+    }
+
+    /**
+     * The oldest save's notice not yet shown (see [reportSave]), if now is
+     * the time for it: no capture on, the screen awake and unlocked, no
+     * other notice up. Else it keeps: this is asked again when any of that
+     * changes (refreshBubble, a notice's time up). Main thread; it shows the
+     * notice at once, so no capture can begin between asking and showing.
+     */
+    private fun showSaveNotice() {
+        if (capturing || noticeView != null || !isScreenUsable()) return
+        val (message, openOnTap) = saveNotices.removeFirstOrNull() ?: return
+        showNoticeNow(message, openOnTap)
     }
 
     private fun removeBubble() {
@@ -1449,7 +1499,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (!isScreenUsable()) return@post abandonCapture()
                 if (bitmap != null) {
                     val snap = if (snapEnabledNow()) collectSnapBounds() else null
-                    presentOverlay(bitmap, snap, areas = sidewaysAreasNow(), text = collectScreenText())
+                    presentOverlay(bitmap, CaptureInfo(snap, sidewaysAreasNow(), collectScreenText(), saveAppNow()))
                 } else {
                     showNotice(getString(R.string.error_capture_failed))
                     abandonCapture()
@@ -1544,33 +1594,25 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      *  more" picture, longer than the screen. */
     fun openOverlayIsGrown(): Boolean = overlayView != null && scrollRun?.grown == true
 
-    /** The snap bounds that go with [openOverlayScreenshot] — collected when
-     *  that screenshot was taken, so they describe what is in the picture
-     *  rather than whatever the app underneath has changed to since. */
-    fun openOverlaySnapBounds(): SnapBounds? = if (overlayView != null) overlaySnap else null
-
-    /** The screen text that goes with [openOverlayScreenshot], likewise —
-     *  handed over: the overlay closing no longer stops its reading. */
-    fun takeOverlayText(): PendingScreenText? =
-        if (overlayView != null) overlayText.also { overlayText = null } else null
+    /** What was read with [openOverlayScreenshot], when that screenshot was
+     *  taken — so it describes what is in the picture rather than whatever
+     *  the app underneath has changed to since. Handed over: the overlay
+     *  closing no longer stops its text being read. Null with no overlay. */
+    fun takeOverlayInfo(): CaptureInfo? =
+        if (overlayView != null) overlayInfo.also { overlayInfo = it.copy(text = null) } else null
 
     /** [run]: the "Capture more" run [bitmap] comes from, to carry on with
      *  if more is asked for. */
-    private fun presentOverlay(
-        bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null, areas: List<Rect> = emptyList(),
-        text: PendingScreenText? = null
-    ) {
+    private fun presentOverlay(bitmap: Bitmap, info: CaptureInfo, run: ScrollCapture? = null) {
         ShareHelper.cleanupCache(this)
         // (The same picture presented again keeps its text being read.)
-        if (overlayText === text) overlayText = null
+        if (overlayInfo.text === info.text) overlayInfo = overlayInfo.copy(text = null)
         teardownOverlay()
         scrollRun = run
-        overlayAreas = areas
         pendingCaptureGen = NO_CAPTURE // it is being presented now
         overlayGen = bubbleCaptureGen
         overlayBitmap = bitmap
-        overlaySnap = snap
-        overlayText = text
+        overlayInfo = info
 
         // (The screen itself takes no keyboard focus: Back reaches it without
         // — see CropScreen.dispatchKeyEvent — and a focused root would keep
@@ -1578,20 +1620,27 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         val screen = CropScreen(this)
         screen.callbacks = object : CropScreen.Callbacks {
             override fun onDeliver(action: Delivery, rect: Rect?) {
-                val delivered = try {
-                    ShareHelper.deliver(this@ScreenshotAccessibilityService, bitmap, rect, action)
-                } catch (e: IOException) {
-                    showNotice(getString(R.string.error_save_failed))
+                val bounds = ShareHelper.bounds(bitmap, rect) ?: return
+                val service = this@ScreenshotAccessibilityService
+                if (action == Delivery.SAVE) {
+                    // Out of the way at once: the notice says how it went.
                     dismissOverlay()
+                    ShareHelper.deliver(service, bitmap, bounds, action, info.app) { result ->
+                        reportSave(service, ShareHelper.resultMessage(service, result), result.getOrNull()?.uri)
+                    }
                     return
-                } catch (e: Exception) {
-                    showNotice(getString(R.string.error_capture_failed))
+                }
+                // A share or a copy is handed over from the tool's window
+                // (see ShareHelper.handOver): it waits for the image.
+                screen.setDelivering(true)
+                ShareHelper.deliver(service, bitmap, bounds, action, info.app) { result ->
+                    if (overlayView !== screen) return@deliver // closed meanwhile: no longer wanted
+                    // (They show for themselves; see AssistSession.deliver.)
+                    result
+                        .mapCatching { ShareHelper.handOver(service, action, it) }
+                        .onFailure { showNotice(getString(ShareHelper.failureMessage(it))) }
                     dismissOverlay()
-                    return
-                } ?: return
-                dismissOverlay()
-                // (Shares and copies show for themselves; see AssistSession.deliver.)
-                if (action == Delivery.SAVE) showNotice(getString(R.string.saved), openOnTap = delivered)
+                }
             }
 
             override fun onCancel() = dismissOverlay()
@@ -1609,7 +1658,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             if (run == null || (!run.grown && run.area == null)) {
                 val display = ScrollCapture.displayBounds(this)
                 screen.onCaptureSideways = {
-                    screen.pickArea(areas.map { ScrollCapture.toPicture(it, display, bitmap) })
+                    screen.pickArea(info.areas.map { ScrollCapture.toPicture(it, display, bitmap) })
                 }
                 screen.onSidewaysRun = { chosen, more ->
                     captureSideways(ScrollCapture.toDisplay(chosen, display, bitmap), directionOf(more), chosen)
@@ -1647,9 +1696,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // capture, from every path, until the service is toggled.
         if (runCatching { windowManager.addView(screen, params) }.isFailure) {
             overlayBitmap = null
-            overlaySnap = null
-            overlayText?.cancel()
-            overlayText = null
+            overlayInfo.text?.cancel()
+            overlayInfo = CaptureInfo()
             scrollRun = null
             // Restore the "no overlay is open" invariant overlayGen documents —
             // it was claimed just above, and leaving it pointing at the live
@@ -1672,7 +1720,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { dismissOverlay() }
         }
-        screen.setBitmap(bitmap, snap, scrollshot = run != null && (run.grown || run.area != null), text = text)
+        screen.setBitmap(bitmap, info.snap, scrollshot = run != null && (run.grown || run.area != null), text = info.text)
     }
 
     // --- Capture more ------------------------------------------------------
@@ -1748,22 +1796,22 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * this, then closes, and the run carries on in this service's overlay,
      * which looks the same. False if this service can't take it.
      */
-    fun adoptCaptureMore(more: CropScreen.More, picture: Bitmap, snap: SnapBounds?, areas: List<Rect>): Boolean {
+    fun adoptCaptureMore(more: CropScreen.More, picture: Bitmap, info: CaptureInfo): Boolean {
         if (!consented() || !capturing) return false
         adoptingCaptureMore = directionOf(more)
-        keepForRetry(picture, snap, areas)
+        keepForRetry(picture, info)
         return true
     }
 
     /** As [adoptCaptureMore], for a sideways run of [area] (display pixels)
      *  the session's user chose, [more] left or right. */
     fun adoptCaptureSideways(
-        area: Rect, more: CropScreen.More, picture: Bitmap, snap: SnapBounds?, areas: List<Rect>, selection: Rect
+        area: Rect, more: CropScreen.More, picture: Bitmap, info: CaptureInfo, selection: Rect
     ): Boolean {
         if (!consented() || !capturing) return false
         adoptingArea = area
         adoptingCaptureMore = directionOf(more)
-        keepForRetry(picture, snap, areas)
+        keepForRetry(picture, info)
         adoptingSelection = selection
         return true
     }
@@ -1771,14 +1819,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** The session's picture, kept for a first step that fails or (sideways)
      *  gets nowhere (see runCaptureMoreStep): the tool then comes back with
      *  it rather than with nothing. */
-    private fun keepForRetry(picture: Bitmap, snap: SnapBounds?, areas: List<Rect>) {
+    private fun keepForRetry(picture: Bitmap, info: CaptureInfo) {
         overlayBitmap = picture
-        overlaySnap = snap
         // (The session's text stays with the session: a picture that comes
         // back from here gets OCR'd instead.)
-        overlayText?.cancel()
-        overlayText = null
-        overlayAreas = areas
+        overlayInfo.text?.cancel()
+        overlayInfo = info.copy(text = null)
     }
 
     /**
@@ -1792,10 +1838,6 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     fun sidewaysAreasNow(): List<Rect> =
         if (consented() && Prefs.isCaptureMoreEnabled(this)) ScrollCapture.findSidewaysAreas(this)
         else emptyList()
-
-    /** The areas the open overlay was given (see [sidewaysAreasNow]), for a
-     *  session that takes the overlay's picture over. */
-    fun openOverlaySidewaysAreas(): List<Rect> = if (overlayView != null) overlayAreas else emptyList()
 
     /** [area] and [selection]: a sideways run's, else null. */
     private fun beginAdoptedCaptureMore(going: ScrollCapture.Direction, area: Rect?, selection: Rect?) {
@@ -1841,9 +1883,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (grown != null) {
                     // (A run still of one frame is a picture of the screen,
                     // with the "↔" button as the one before it had.)
-                    presentOverlay(grown, run.snapBounds(), run, if (run.grown) emptyList() else overlayAreas)
+                    val areas = if (run.grown) emptyList() else overlayInfo.areas
+                    presentOverlay(grown, CaptureInfo(run.snapBounds(), areas, app = overlayInfo.app), run)
                 } else {
-                    presentOverlay(bitmap, overlaySnap, null, overlayAreas, overlayText)
+                    presentOverlay(bitmap, overlayInfo, null)
                     if (retryWith != null) overlayView?.applyCropRect(retryWith)
                 }
                 when (outcome) {
@@ -1955,9 +1998,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun teardownOverlay() {
         detachOverlayView()
         overlayBitmap = null
-        overlaySnap = null
-        overlayText?.cancel()
-        overlayText = null
+        overlayInfo.text?.cancel()
+        overlayInfo = CaptureInfo()
         scrollRun = null
         // (A step called off mid-way never gets to switch this off itself.)
         watchScrolling(false)
