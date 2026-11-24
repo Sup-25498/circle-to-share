@@ -1,9 +1,11 @@
 package eu.woshicado.circletoshare.capture
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.MainActivity
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
@@ -17,6 +19,9 @@ import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService.Refusal
  * (Theme.NoDisplay, a task of its own: see the manifest.)
  */
 abstract class CaptureStarterActivity : Activity() {
+
+    // (In the language picked, before Android 13 too: see Language.)
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Language.wrap(base))
 
     /** Asks [service] for the capture. */
     protected abstract fun request(service: ScreenshotAccessibilityService): Refusal

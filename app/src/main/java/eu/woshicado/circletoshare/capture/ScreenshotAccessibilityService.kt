@@ -42,6 +42,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.MainActivity
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
@@ -476,6 +477,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         }
     }
 
+    // The crop tool, the bubble and the notices in the language picked,
+    // before Android 13 too (see Language).
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Language.wrap(base))
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -897,7 +902,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (overlayGen == bubbleCaptureGen) capturing = false
             }
             // A notice too: it may name the app a screenshot was of (a save's
-            // into a folder per app), and its timer stops while the device
+            // into one folder per app), and its timer stops while the device
             // sleeps — it would still be on the lock screen on waking.
             if (!isScreenUsable()) dropNotice()
             if (shouldShowBubble()) addBubble() else removeBubble()
@@ -1617,6 +1622,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // (The screen itself takes no keyboard focus: Back reaches it without
         // — see CropScreen.dispatchKeyEvent — and a focused root would keep
         // arrow keys from ever reaching its buttons.)
+        Language.refresh(this)
         val screen = CropScreen(this)
         screen.callbacks = object : CropScreen.Callbacks {
             override fun onDeliver(action: Delivery, rect: Rect?) {

@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.MainActivity
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
@@ -28,6 +29,9 @@ import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
  * the tile opens the app instead of failing silently.
  */
 class CaptureTileService : TileService() {
+
+    // (In the language picked, before Android 13 too: see Language.)
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Language.wrap(base))
 
     companion object {
         // Long enough for the keyguard-exit transition to flip

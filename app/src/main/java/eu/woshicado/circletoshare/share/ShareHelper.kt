@@ -87,7 +87,7 @@ object ShareHelper {
      * Crops [source] to [bounds] (see [bounds]) and writes it, in the
      * background: to the cache for Share and Copy, to the gallery for Save.
      * [app]: the package of the app the picture is of, if known, for a save
-     * into a folder per app (see [Prefs.isSavePerApp]). [done] gets, on the
+     * into one folder per app (see [Prefs.isSavePerApp]). [done] gets, on the
      * main thread, where the image now is — to [handOver] for Share and
      * Copy — or the failure: an [IOException] when the image could not be
      * written, anything else unexpected; the caller reports either. Saying

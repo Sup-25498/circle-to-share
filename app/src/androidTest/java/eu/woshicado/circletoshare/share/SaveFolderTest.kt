@@ -24,7 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Where Save puts images: Pictures/Screenshots unless a folder is picked,
- *  a folder per app if asked for, and never nowhere. (Picking a folder
+ *  one folder per app if asked for, and never nowhere. (Picking a folder
  *  takes Android's picker, which a test can't work: that part is tried by
  *  hand.) */
 @RunWith(AndroidJUnit4::class)

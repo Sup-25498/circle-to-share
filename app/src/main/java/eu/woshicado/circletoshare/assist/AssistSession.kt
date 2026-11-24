@@ -22,6 +22,7 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
@@ -65,6 +66,17 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     // The app the picture is of as the system's assist data for this show
     // names it (see onHandleAssist), where the service didn't say (see info).
     private var assistApp: String? = null
+
+    // Android gives the session a window context in the system's language,
+    // not the app's (see Language): wrapped, for whichever it is.
+    private var inLanguage: Pair<Context, Context>? = null
+
+    override fun getContext(): Context {
+        val base = super.getContext()
+        inLanguage?.let { (was, wrapped) -> if (was === base) return wrapped }
+        return Language.wrap(base).also { inLanguage = base to it }
+    }
+
     // When the session was shown — anchor for the zoom-settle deadline below.
     private var showUptime = 0L
 
@@ -217,6 +229,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        // (Before anything is said or built: see Language.refresh.)
+        Language.refresh(context)
         // Re-invoking the assistant while the overlay is already up re-fires
         // onShow with a fresh system screenshot — of our own overlay. Ignore it,
         // or each activation would bake another layer of dim/crop UI into the
@@ -569,7 +583,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     /**
      * What the system tells the assistant of the app in front: of all it
      * sends, only the package of the focused activity is read, and only for
-     * a save into a folder per app. It comes only with Android's "Use text
+     * a save into one folder per app. It comes only with Android's "Use text
      * from screen" on — the accessibility service's view, where it runs,
      * needs no such thing and counts first (see [info]).
      */

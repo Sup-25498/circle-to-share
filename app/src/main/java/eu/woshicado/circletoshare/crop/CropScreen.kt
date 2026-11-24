@@ -14,6 +14,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.text.LineBreaker
 import android.net.Uri
 import android.text.TextUtils
 import android.util.TypedValue
@@ -169,7 +170,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         )
 
-        hintView = TextView(context).apply {
+        hintView = HintView(context).apply {
             text = context.getString(R.string.crop_hint)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
@@ -177,7 +178,6 @@ class CropScreen(context: Context) : FrameLayout(context) {
             setPadding(dp(20), dp(10), dp(20), dp(10))
             compoundDrawablePadding = dp(ICON_PADDING_DP)
             compoundDrawableTintList = ColorStateList.valueOf(Color.WHITE)
-            gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
         }
         addView(
@@ -238,10 +238,12 @@ class CropScreen(context: Context) : FrameLayout(context) {
             deliver(Delivery.SHARE)
         }
         buttonBar.addAction(saveButton)
-        // (Its label, for the fit, also while it shows its icon alone.)
-        buttonBar.addAction(copyButton, context.getString(R.string.action_copy))
+        // (Its label, for the fit, also while it shows its icon alone. Short
+        // of room, the copy buttons are the first to show their icons alone:
+        // Save and Share keep their labels as long as they can.)
+        buttonBar.addAction(copyButton, context.getString(R.string.action_copy), givesWay = true)
         // (Not counted for the fit: with it, Copy loses its label.)
-        buttonBar.addAction(copyTextButton, measured = false)
+        buttonBar.addAction(copyTextButton, measured = false, givesWay = true)
         buttonBar.addAction(shareButton)
         // Save and Share alike, the copy buttons between them in the middle.
         buttonBar.matchWidths(saveButton, shareButton)
@@ -914,19 +916,11 @@ class CropScreen(context: Context) : FrameLayout(context) {
 
     /** [button] as an icon alone, [description] saying what it does to
      *  screen readers and on a long press. */
-    private fun setIconOnly(button: TextView, description: Int) {
-        button.text = ""
-        button.contentDescription = context.getString(description)
-        button.tooltipText = context.getString(description)
-        (button as PillButton).setIconAlone(true)
-    }
+    private fun setIconOnly(button: TextView, description: Int) =
+        (button as PillButton).showIconOnly(context.getString(description))
 
-    private fun setLabeled(button: TextView, label: Int) {
-        button.text = context.getString(label)
-        button.contentDescription = null
-        button.tooltipText = null
-        (button as PillButton).setIconAlone(false)
-    }
+    private fun setLabeled(button: TextView, label: Int) =
+        (button as PillButton).showLabel(context.getString(label))
 
     /** [res] at the size the pills' icons share, ready for a compound
      *  drawable (tinted by the view it goes on). */
@@ -936,7 +930,6 @@ class CropScreen(context: Context) : FrameLayout(context) {
 
     private fun pillButton(label: String, iconRes: Int, filled: Boolean, onClick: () -> Unit): TextView =
         PillButton(context).apply {
-            text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             val content = if (filled) Color.BLACK else Color.WHITE
             setTextColor(content)
@@ -956,7 +949,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
             )
             gravity = Gravity.CENTER
             minHeight = dp(48)
-            setIconAlone(false)
+            showLabel(label)
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
@@ -988,9 +981,38 @@ class CropScreen(context: Context) : FrameLayout(context) {
 
 // Between a pill's icon and its label.
 private const val ICON_PADDING_DP = 8
+// A pill's padding beside a label: less on the icon's side, as Material's.
+private const val LABEL_START_DP = 18
+private const val LABEL_END_DP = 24
 // Each side of an icon-only pill: two of them take about the width of one
 // with a short label.
 private const val ICON_ONLY_PADDING_DP = 14
+
+/**
+ * The pill at the top (a hint, a notice): where its text takes more than one
+ * line, the lines are centered and about as long as each other, and the pill
+ * as wide as the longest of them. A plain TextView stays as wide as the room
+ * it was offered, leaving an empty strip beside its shorter lines.
+ */
+@SuppressLint("AppCompatCustomView")
+private class HintView(context: Context) : TextView(context) {
+
+    init {
+        gravity = Gravity.CENTER
+        breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val lines = layout ?: return
+        if (lines.lineCount < 2) return
+        val longest = (0 until lines.lineCount).maxOf { lines.getLineWidth(it) }
+        val width = ceil(longest).toInt() + compoundPaddingLeft + compoundPaddingRight
+        if (width < measuredWidth) {
+            super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightMeasureSpec)
+        }
+    }
+}
 
 /**
  * A pill whose leading icon stays beside its label, the two centered as one.
@@ -1006,7 +1028,21 @@ private const val ICON_ONLY_PADDING_DP = 14
 private class PillButton(context: Context) : TextView(context) {
 
     // What it says, also while it shows its icon alone (see compact).
-    private var label: CharSequence = ""
+    var label: CharSequence = ""
+        private set
+
+    // What a screen reader says of it where it has no label (see showIconOnly).
+    private var description: CharSequence? = null
+
+    // (TextView's constructor sets a text before this class's fields are.)
+    private var ready = false
+
+    // Padded for its icon alone just now (see setIconAlone).
+    private var iconAlone = false
+
+    init {
+        ready = true
+    }
 
     /**
      * Its icon alone, its label said to screen readers and on a long press
@@ -1023,28 +1059,72 @@ private class PillButton(context: Context) : TextView(context) {
             if (label.isEmpty()) return
             val shown = if (value) "" else label
             if (text.toString() != shown.toString()) super.setText(shown, BufferType.NORMAL)
-            contentDescription = if (value) label else null
-            tooltipText = if (value) label else null
-            setIconAlone(value)
+            describe()
         }
 
     override fun setText(text: CharSequence?, type: BufferType?) {
         label = text ?: ""
         super.setText(if (compact && label.isNotEmpty()) "" else text, type)
+        if (ready) describe()
+    }
+
+    /** [label] beside its icon, where the row has room for it. */
+    fun showLabel(label: CharSequence) {
+        description = null
+        text = label
+    }
+
+    /** Its icon alone, wherever it is, [description] said to screen readers
+     *  and on a long press. */
+    fun showIconOnly(description: CharSequence) {
+        this.description = description
+        text = ""
+    }
+
+    /** The padding beside a label (and the icon with it), however it is
+     *  padded now: what a row judges the room for its label by. From the
+     *  padding as it is, so that the icon counts as it does there (not at
+     *  all until the drawable is placed, which a view outside a window may
+     *  never be). */
+    fun labeledPadding(): Int = paddedAs(iconAlone = false)
+
+    /** Its width with its icon alone, however it is padded now (as above). */
+    fun iconAloneWidth(): Int = paddedAs(iconAlone = true)
+
+    private fun paddedAs(iconAlone: Boolean): Int {
+        val now = compoundPaddingLeft + compoundPaddingRight
+        if (iconAlone == this.iconAlone) return now
+        // (The icon counted in the padding beside a label as it is in the
+        // padding now, if at all.)
+        val besideLabel = if (now > paddingLeft + paddingRight) dp(ICON_PADDING_DP) else 0
+        val labeled = dp(LABEL_START_DP) + dp(LABEL_END_DP) + besideLabel
+        val alone = 2 * dp(ICON_ONLY_PADDING_DP)
+        return if (iconAlone) now - labeled + alone else now - alone + labeled
+    }
+
+    // What is said of it and how it is padded, from its label and whether
+    // the row has made it compact: one rule, whichever changed.
+    private fun describe() {
+        val said = if (label.isEmpty()) description else if (compact) label else null
+        contentDescription = said
+        tooltipText = said
+        setIconAlone(compact || label.isEmpty())
     }
 
     /** Padded for the icon alone, or for a label beside it (less on the
      *  icon's side, as Material's buttons with an icon). */
-    fun setIconAlone(iconAlone: Boolean) {
-        fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun setIconAlone(iconAlone: Boolean) {
+        this.iconAlone = iconAlone
         compoundDrawablePadding = if (iconAlone) 0 else dp(ICON_PADDING_DP)
-        val start = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(18)
-        val end = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(24)
+        val start = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(LABEL_START_DP)
+        val end = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(LABEL_END_DP)
         // (Padding as it is already is left alone: setting it lays out again.)
         if (paddingStart != start || paddingEnd != end || paddingTop != dp(13)) {
             setPaddingRelative(start, dp(13), end, dp(13))
         }
     }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     // Placed at each draw rather than layout: a new label in a pill of fixed
     // width (stacked) is only redrawn, not laid out again.
@@ -1159,10 +1239,13 @@ private class AreaPickerView(context: Context) : View(context) {
 /**
  * A row of pill buttons, main action last. Where the buttons don't fit side
  * by side with their labels on one line — a narrow screen at a large font or
- * display size — they show their icons alone (see PillButton.compact); where
- * even those don't fit, it becomes a stack of equally wide buttons with their
- * labels, main action first, rather than squeeze the last one into a sliver
- * that breaks its label a letter at a time.
+ * display size, a long translation — those that give way first (see
+ * addAction) show their icons alone and the rest keep their labels; where
+ * that doesn't fit either, all show their icons alone (see
+ * PillButton.compact); where even those don't fit, it becomes a stack of
+ * equally wide buttons with their labels, main action first, rather than
+ * squeeze the last one into a sliver that breaks its label a letter at a
+ * time.
  */
 private class ActionRow(context: Context) : LinearLayout(context) {
 
@@ -1171,6 +1254,8 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     private val labels = HashMap<TextView, List<String>>()
     // Buttons left out of judging the fit (see addAction).
     private val unmeasured = HashSet<TextView>()
+    // Buttons that show their icons alone before the others do (see addAction).
+    private val givingWay = HashSet<TextView>()
     // Buttons as wide as the widest of them (see matchWidths).
     private val matched = HashSet<TextView>()
     private var stacked = false
@@ -1180,10 +1265,13 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     }
 
     /** [measured] false: [button] is left out of judging the fit — it only
-     *  ever shows while another gives up its label for the room. */
-    fun addAction(button: TextView, vararg labels: String, measured: Boolean = true) {
+     *  ever shows while another gives up its label for the room. [givesWay]:
+     *  where not all labels fit, it shows its icon alone first, for the
+     *  others to keep theirs. */
+    fun addAction(button: TextView, vararg labels: String, measured: Boolean = true, givesWay: Boolean = false) {
         this.labels[button] = labels.toList()
         if (!measured) unmeasured += button
+        if (givesWay) givingWay += button
         addView(button, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         applyItemLayout()
     }
@@ -1201,12 +1289,17 @@ private class ActionRow(context: Context) : LinearLayout(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED) {
-            // With their labels if they fit; else their icons alone, if those
-            // do; else stacked, with their labels.
+            // With their labels if they fit; else those that give way their
+            // icons alone, the rest their labels, if that fits; else all their
+            // icons alone, if those do; else stacked, with their labels.
             val room = MeasureSpec.getSize(widthMeasureSpec)
             val labels = widthSideBySide() <= room
-            val icons = labels || widthIconsAlone() <= room
-            for (i in 0 until childCount) (getChildAt(i) as? PillButton)?.compact = !labels && icons
+            val some = !labels && givingWay.isNotEmpty() && widthSideBySide(givingWay) <= room
+            val icons = labels || some || widthIconsAlone() <= room
+            for (i in 0 until childCount) {
+                val button = getChildAt(i) as? PillButton ?: continue
+                button.compact = if (some) button in givingWay else !labels && icons
+            }
             setStacked(!icons)
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
@@ -1231,19 +1324,32 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     }
 
     /** The width the row needs with every label on a single line (the
-     *  matched buttons as wide as the widest of them). */
-    private fun widthSideBySide(): Int {
+     *  matched buttons as wide as the widest of them) — but those of
+     *  [iconsAlone], which show their icons alone. */
+    private fun widthSideBySide(iconsAlone: Set<TextView> = emptySet()): Int {
         var width = paddingLeft + paddingRight
         // (Compound padding: the padding plus the icon beside the label.)
         fun needed(button: TextView): Int {
-            val widest = (labels[button].orEmpty() + button.text.toString())
+            // (Its label, not its text: compact, a pill shows none, and the
+            // row would take that for room and flip back and forth.)
+            val shown = (button as? PillButton)?.label ?: button.text
+            val widest = (labels[button].orEmpty() + shown.toString())
                 .maxOf { button.paint.measureText(it) }
-            return button.compoundPaddingLeft + button.compoundPaddingRight + ceil(widest).toInt()
+            // (Padded as with a label, not as it is: compact, a pill is padded
+            // for its icon alone, and that too would be taken for room.)
+            val padding = (button as? PillButton)?.labeledPadding()
+                ?: (button.compoundPaddingLeft + button.compoundPaddingRight)
+            return padding + ceil(widest).toInt()
         }
         val matchedWidth = matched.filter { it.visibility != View.GONE && it !in unmeasured }
             .maxOfOrNull { needed(it) } ?: 0
         for (i in 0 until childCount) {
             val button = getChildAt(i) as TextView
+            if (button in iconsAlone) {
+                // (Those showing alone too, beside a button giving way.)
+                if (button.visibility != View.GONE) width += iconAloneWidth(button) + 2 * dp(ITEM_MARGIN_DP)
+                continue
+            }
             if (button in unmeasured) continue
             val own = if (button in matched && button.visibility != View.GONE) matchedWidth else needed(button)
             width += own + 2 * dp(ITEM_MARGIN_DP)
@@ -1251,14 +1357,16 @@ private class ActionRow(context: Context) : LinearLayout(context) {
         return width
     }
 
+    private fun iconAloneWidth(button: TextView): Int = (button as? PillButton)?.iconAloneWidth()
+        ?: ((button.compoundDrawablesRelative[0]?.bounds?.width() ?: 0) + 2 * dp(ICON_ONLY_PADDING_DP))
+
     /** The width the row needs with every button showing its icon alone. */
     private fun widthIconsAlone(): Int {
         var width = paddingLeft + paddingRight
         for (i in 0 until childCount) {
             val button = getChildAt(i) as TextView
             if (button.visibility == View.GONE) continue
-            val icon = button.compoundDrawablesRelative[0]?.bounds?.width() ?: 0
-            width += icon + 2 * dp(ICON_ONLY_PADDING_DP) + 2 * dp(ITEM_MARGIN_DP)
+            width += iconAloneWidth(button) + 2 * dp(ITEM_MARGIN_DP)
         }
         return width
     }
@@ -1291,3 +1399,4 @@ private class ActionRow(context: Context) : LinearLayout(context) {
         const val STACK_GAP_DP = 8
     }
 }
+

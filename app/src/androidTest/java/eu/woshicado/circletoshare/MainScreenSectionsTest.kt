@@ -35,7 +35,7 @@ class MainScreenSectionsTest {
         qrWas = Prefs.isQrDetectEnabled(context)
         // (Stored or not: one of the tests is about what holds when not.)
         buttonsWere = prefs().takeIf { it.contains("capture_more") }?.getBoolean("capture_more", false)
-        triggersWere = Prefs.isTriggersExpanded(context)
+        triggersWere = Prefs.isSectionExpanded(context, "triggers")
         copyTextWas = Prefs.isCopyTextEnabled(context)
     }
 
@@ -44,7 +44,7 @@ class MainScreenSectionsTest {
     @After
     fun restore() {
         Prefs.setQrDetectEnabled(context, qrWas)
-        Prefs.setTriggersExpanded(context, triggersWere)
+        Prefs.setSectionExpanded(context, "triggers", triggersWere)
         Prefs.setCopyTextEnabled(context, copyTextWas)
         prefs().edit().apply {
             buttonsWere?.let { putBoolean("capture_more", it) } ?: remove("capture_more")
@@ -175,7 +175,7 @@ class MainScreenSectionsTest {
 
     @Test
     fun howToOpenIt_foldsOnATap_andIsAsLeftTheNextTimeTheAppIsOpened() {
-        Prefs.setTriggersExpanded(context, true)
+        Prefs.setSectionExpanded(context, "triggers", true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 assertEquals(true, activity.shows(R.id.triggers_content))
@@ -186,7 +186,7 @@ class MainScreenSectionsTest {
                 assertEquals(true, activity.shows(R.id.switch_freeform))
             }
         }
-        assertEquals(false, Prefs.isTriggersExpanded(context))
+        assertEquals(false, Prefs.isSectionExpanded(context, "triggers"))
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 assertEquals(false, activity.shows(R.id.triggers_content))
@@ -194,12 +194,12 @@ class MainScreenSectionsTest {
                 assertEquals(true, activity.shows(R.id.triggers_content))
             }
         }
-        assertEquals(true, Prefs.isTriggersExpanded(context))
+        assertEquals(true, Prefs.isSectionExpanded(context, "triggers"))
     }
 
     @Test
     fun foldedAway_howToOpenIt_saysWhetherTheFloatingButtonIsOn() {
-        Prefs.setTriggersExpanded(context, true)
+        Prefs.setSectionExpanded(context, "triggers", true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val summary = activity.findViewById<TextView>(R.id.triggers_summary)
@@ -227,9 +227,67 @@ class MainScreenSectionsTest {
     }
 
     @Test
+    fun everyOtherSection_foldsOnATap_andIsAsLeftTheNextTimeTheAppIsOpened() {
+        val sections = listOf(
+            Triple("crop", R.id.crop_header, R.id.crop_content),
+            Triple("extras", R.id.extras_header, R.id.extras_content),
+            Triple("experimental", R.id.experimental_header, R.id.experimental_content),
+            Triple("saving", R.id.saving_header, R.id.saving_content),
+            Triple("about", R.id.about_header, R.id.about_content),
+        )
+        val were = sections.map { prefs().takeIf { p -> p.contains(it.first + "_expanded") }?.getBoolean(it.first + "_expanded", true) }
+        try {
+            // Open where nothing is stored.
+            prefs().edit().apply { sections.forEach { remove(it.first + "_expanded") } }.commit()
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    for ((_, header, content) in sections) {
+                        assertEquals(true, activity.shows(content))
+                        activity.findViewById<View>(header).performClick()
+                        assertEquals(false, activity.shows(content))
+                        assertEquals(true, activity.shows(header))
+                    }
+                }
+            }
+            sections.forEach { assertEquals(false, Prefs.isSectionExpanded(context, it.first)) }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    for ((_, header, content) in sections) {
+                        assertEquals(false, activity.shows(content))
+                        activity.findViewById<View>(header).performClick()
+                        assertEquals(true, activity.shows(content))
+                    }
+                }
+            }
+            sections.forEach { assertEquals(true, Prefs.isSectionExpanded(context, it.first)) }
+        } finally {
+            prefs().edit().apply {
+                sections.zip(were).forEach { (section, was) ->
+                    was?.let { putBoolean(section.first + "_expanded", it) } ?: remove(section.first + "_expanded")
+                }
+            }.commit()
+        }
+    }
+
+    @Test
+    fun theSections_comeInTheirOrder_savingAfterExperimental_beforeAbout() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val headers = listOf(
+                    R.id.setup_header, R.id.triggers_header, R.id.crop_header, R.id.extras_header,
+                    R.id.experimental_header, R.id.saving_header, R.id.about_header,
+                ).map { activity.findViewById<View>(it) }
+                val parent = headers.first().parent as android.view.ViewGroup
+                val at = headers.map { parent.indexOfChild(it) }
+                assertEquals(at.sorted(), at)
+            }
+        }
+    }
+
+    @Test
     fun howToOpenIt_isOpen_whereNothingIsStored() {
         prefs().edit().remove("triggers_expanded").commit()
-        assertEquals(true, Prefs.isTriggersExpanded(context))
+        assertEquals(true, Prefs.isSectionExpanded(context, "triggers"))
     }
 
     @Test
@@ -334,14 +392,14 @@ class MainScreenSectionsTest {
 
     @Test
     fun aTapOnHowToOpenIt_goesByWhatIsShown_notByWhatIsStored() {
-        Prefs.setTriggersExpanded(context, true)
+        Prefs.setSectionExpanded(context, "triggers", true)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 // Stored otherwise behind the screen's back (a second window).
-                Prefs.setTriggersExpanded(context, false)
+                Prefs.setSectionExpanded(context, "triggers", false)
                 activity.findViewById<View>(R.id.triggers_header).performClick()
                 assertEquals(false, activity.shows(R.id.triggers_content))
-                assertEquals(false, Prefs.isTriggersExpanded(context))
+                assertEquals(false, Prefs.isSectionExpanded(context, "triggers"))
             }
         }
     }

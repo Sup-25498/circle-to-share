@@ -123,6 +123,10 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
         search.setOnFocusChangeListener { _, focused ->
             if (focused) {
                 list.post {
+                    // (Stopping first the list's own scroll to the focused
+                    // field, still under way: it would carry on past the top
+                    // where the settings above are taller than the list.)
+                    list.stopScroll()
                     (list.layoutManager as LinearLayoutManager)
                         .scrollToPositionWithOffset(0, -search.top)
                 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Play takes tips through its own billing (see Support.kt). -->
+    <string name="support_note">Circle to Share ist kostenlos. Wenn dir die App gefällt, kannst du ihre Entwicklung mit einem kleinen, freiwilligen Trinkgeld unterstützen. Freigeschaltet wird dadurch nichts.</string>
+    <string name="tip_title">Spendier mir einen Kaffee</string>
+    <string name="tip_small">Kleiner Kaffee</string>
+    <string name="tip_medium">Kaffee</string>
+    <string name="tip_large">Kaffee und Kuchen</string>
+    <string name="tip_thanks">Danke für den Kaffee!</string>
+    <string name="tip_pending">Danke! Google Play schließt die Zahlung ab, sobald sie bestätigt ist.</string>
+    <string name="tip_still_open">Ein früheres Trinkgeld in dieser Höhe wird von Google Play noch abgeschlossen. Danach kannst du ein weiteres geben.</string>
+    <string name="tip_unavailable">Trinkgeld ist gerade nicht möglich. Prüfe, ob du in Google Play angemeldet und online bist.</string>
+    <string name="tip_failed">Das Trinkgeld konnte nicht übermittelt werden. Bitte versuche es später noch einmal.</string>
+</resources>

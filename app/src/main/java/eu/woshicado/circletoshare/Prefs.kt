@@ -20,12 +20,15 @@ object Prefs {
     private const val KEY_A11Y_TEXT_CONSENT = "a11y_text_consent"
     private const val KEY_A11Y_TEXT_ASKED = "a11y_text_asked"
     private const val KEY_CAPTURE_MORE = "capture_more"
-    private const val KEY_TRIGGERS_EXPANDED = "triggers_expanded"
+    // After the section's name: "triggers_expanded" (as kept before the other
+// sections folded too), "crop_expanded", ...
+private const val KEY_SECTION_EXPANDED = "_expanded"
     private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
     private const val KEY_CAPTURE_MORE_STEP_SIDEWAYS = "capture_more_step_sideways"
     private const val KEY_CAPTURE_MORE_HANDLES = "capture_more_handles"
     private const val KEY_SAVE_DIR = "save_dir"
     private const val KEY_SAVE_PER_APP = "save_per_app"
+    private const val KEY_LANGUAGE = "language"
 
     // The apps with settings of their own (see setAppOverride), and where
     // each of an app's is kept.
@@ -284,15 +287,26 @@ object Prefs {
             .edit().putBoolean(KEY_SAVE_PER_APP, enabled).apply()
     }
 
-    /** Whether the settings screen shows its "How to open it" section
-     *  unfolded: as the user left it, open to begin with. */
-    fun isTriggersExpanded(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_TRIGGERS_EXPANDED, true)
+    /** The language picked, as a language tag, null for the system's:
+     *  kept here before Android 13 only (see Language). */
+    fun getLanguage(context: Context): String? =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(KEY_LANGUAGE, null)
 
-    fun setTriggersExpanded(context: Context, expanded: Boolean) {
+    fun setLanguage(context: Context, tag: String?) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_TRIGGERS_EXPANDED, expanded).apply()
+            .edit().putString(KEY_LANGUAGE, tag).apply()
+    }
+
+    /** Whether the settings screen shows the section [section] ("triggers",
+     *  "crop", ...: see MainActivity.folds) unfolded: as the user left it,
+     *  open to begin with. */
+    fun isSectionExpanded(context: Context, section: String): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(section + KEY_SECTION_EXPANDED, true)
+
+    fun setSectionExpanded(context: Context, section: String, expanded: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(section + KEY_SECTION_EXPANDED, expanded).apply()
     }
 
     /** "Copy text": the button, and with it the reading of the screen's

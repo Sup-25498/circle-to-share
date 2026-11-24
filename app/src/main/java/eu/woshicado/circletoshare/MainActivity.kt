@@ -39,6 +39,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import eu.woshicado.circletoshare.assist.AssistInteractionService
@@ -189,18 +190,20 @@ class MainActivity : AppCompatActivity() {
         }
         setupHeader.readAsButton()
 
-        // "How to open it" folds too, but only by hand, and stays as left.
-        findViewById<View>(R.id.triggers_header).apply {
-            readAsButton()
-            setOnClickListener {
-                // (From what is shown, like the setup header: a tap always
-                // does something, whatever is stored.)
-                val open = this@MainActivity.findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
-                Prefs.setTriggersExpanded(this@MainActivity, open)
-                showTriggers(open)
+        // The other sections fold too, but only by hand, and stay as left.
+        for (fold in folds) {
+            findViewById<View>(fold.header).apply {
+                readAsButton()
+                setOnClickListener {
+                    // (From what is shown, like the setup header: a tap always
+                    // does something, whatever is stored.)
+                    val open = this@MainActivity.findViewById<View>(fold.content).visibility != View.VISIBLE
+                    Prefs.setSectionExpanded(this@MainActivity, fold.name, open)
+                    showFold(fold, open)
+                }
             }
+            showFold(fold, Prefs.isSectionExpanded(this, fold.name))
         }
-        showTriggers(Prefs.isTriggersExpanded(this))
 
         findViewById<Button>(R.id.btn_assistant_settings).setOnClickListener {
             openFirstAvailable(
@@ -399,6 +402,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
         findViewById<Button>(R.id.btn_privacy).setOnClickListener { openUrl(R.string.url_privacy) }
         findViewById<Button>(R.id.btn_imprint).setOnClickListener { openUrl(R.string.url_imprint) }
+        findViewById<View>(R.id.btn_language).apply {
+            readAsButton()
+            setOnClickListener { pickLanguage() }
+        }
+        // (A new pick starts this screen again.)
+        findViewById<TextView>(R.id.language_summary).text = languageLabel(Language.picked())
         findViewById<View>(R.id.btn_licenses).apply {
             readAsButton()
             setOnClickListener {
@@ -670,6 +679,25 @@ class MainActivity : AppCompatActivity() {
         runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(tree), SAVE_DIR_ACCESS) }
     }
 
+    private fun languageLabel(tag: String?): String =
+        tag?.let(Language::name) ?: getString(R.string.language_system)
+
+    /** The app's language, picked from the system's, English and the
+     *  translations; a new one restarts the app's screens in it. */
+    private fun pickLanguage() {
+        val options = Language.options()
+        val picked = Language.picked()
+        // (None checked for a language picked elsewhere that isn't offered.)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.language)
+            .setSingleChoiceItems(options.map(::languageLabel).toTypedArray(), options.indexOf(picked)) { dialog, which ->
+                dialog.dismiss()
+                if (options[which] != picked) Language.pick(this, options[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     /** Where Save puts images, under its row — and whether it can: a
      *  folder deleted, or its card taken out, is saved around, not into.
      *  That takes asking the folder's provider, which may be slow (a card,
@@ -794,9 +822,9 @@ class MainActivity : AppCompatActivity() {
     private fun showSetupSteps(show: Boolean) =
         showSection(R.id.setup_header, R.id.setup_chevron, R.id.setup_content, show)
 
-    private fun showTriggers(show: Boolean) {
-        showSection(R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content, show)
-        renderTriggersSummary()
+    private fun showFold(fold: Fold, show: Boolean) {
+        showSection(fold.header, fold.chevron, fold.content, show)
+        if (fold.header == R.id.triggers_header) renderTriggersSummary()
     }
 
     /** Folded, the header of "How to open it" says what of the section is
@@ -931,6 +959,18 @@ class MainActivity : AppCompatActivity() {
     // running (see updateStatus); 0 while it is not.
     private var assistantStaleSince = 0L
     private var fallbackStaleSince = 0L
+
+    /** A section that folds under its header by hand: kept by [name]. */
+    private class Fold(val name: String, val header: Int, val chevron: Int, val content: Int)
+
+    private val folds = listOf(
+        Fold("triggers", R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content),
+        Fold("crop", R.id.crop_header, R.id.crop_chevron, R.id.crop_content),
+        Fold("extras", R.id.extras_header, R.id.extras_chevron, R.id.extras_content),
+        Fold("experimental", R.id.experimental_header, R.id.experimental_chevron, R.id.experimental_content),
+        Fold("saving", R.id.saving_header, R.id.saving_chevron, R.id.saving_content),
+        Fold("about", R.id.about_header, R.id.about_chevron, R.id.about_content),
+    )
 
     companion object {
         /**

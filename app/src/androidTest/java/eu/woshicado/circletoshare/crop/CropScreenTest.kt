@@ -1,9 +1,11 @@
 package eu.woshicado.circletoshare.crop
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
+import android.util.DisplayMetrics
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -53,7 +55,14 @@ class CropScreenTest {
         Prefs.setCopyTextEnabled(context, true)
         lastCropWas = context.getSharedPreferences("cts", Context.MODE_PRIVATE).all
             .filterKeys { it.startsWith("last_crop_") }.mapValues { it.value as Int }
-        screen = CropScreen(context)
+        // At the font and display size the device came with: a phone's
+        // width, as these tests take it. (The fit at others is tried with
+        // widths of its own: see buttonsWhoseLabelsDoNotFit_….)
+        val standard = Configuration(context.resources.configuration).apply {
+            fontScale = 1f
+            densityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE
+        }
+        screen = CropScreen(context.createConfigurationContext(standard))
         // A size no real capture has, so no remembered crop can match it and
         // the hint is the plain, non-interactive one.
         screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
@@ -336,7 +345,7 @@ class CropScreenTest {
         val shown = (0 until bar.childCount).count { bar.getChildAt(it).visibility != View.GONE }
         // Room for every icon alone (18 dp, 14 dp either side, 6 dp margins),
         // not for the labels.
-        val density = context.resources.displayMetrics.density
+        val density = screen.resources.displayMetrics.density
         val width = ((shown * (18 + 2 * 14 + 2 * 6) + 8) * density).toInt()
         assertTrue(width < bar.width)
 
@@ -360,6 +369,133 @@ class CropScreenTest {
         assertEquals(context.getString(R.string.action_save), save.text.toString())
         assertEquals("Send", share.text.toString())
         assertNull(save.contentDescription)
+    }
+
+    @Test
+    fun aBarShortOfRoom_givesUpCopysLabelFirst_thenAllLabels_andStaysSo() {
+        // (Labeled Copy: with Copy text beside it, the bar is judged by a
+        // label it doesn't show.)
+        val was = Prefs.isCopyTextEnabled(context)
+        Prefs.setCopyTextEnabled(context, false)
+        try {
+            onMain { screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)) }
+            val (save, copy, share) = barButtons()
+            val bar = share.parent as ViewGroup
+            val density = screen.resources.displayMetrics.density
+            fun dp(value: Int) = (value * density).toInt()
+            onMain { layOut(3 * WIDTH) }
+            assertEquals(context.getString(R.string.action_save), save.text.toString())
+            val labeled = bar.measuredWidth
+            val copyLabeled = copy.measuredWidth
+            fun measure(width: Int) = onMain {
+                bar.measure(
+                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.AT_MOST),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+            }
+            // A little short of what the labels take, as a long translation
+            // can leave it: Copy its icon alone, Save and Share their labels.
+            // And so at every measure after: a pill padded for its icon alone
+            // was once taken for room to label it, and the row flipped.
+            repeat(3) {
+                measure(labeled - dp(6))
+                assertEquals("", copy.text.toString())
+                assertEquals(context.getString(R.string.action_copy), copy.contentDescription?.toString())
+                assertEquals(context.getString(R.string.action_save), save.text.toString())
+                assertEquals(context.getString(R.string.action_share), share.text.toString())
+            }
+            // Short of even that (what Copy's label took beyond its icon
+            // alone, and more): all their icons alone.
+            val copySpares = copyLabeled - copy.measuredWidth
+            repeat(3) {
+                measure(labeled - copySpares - dp(6))
+                assertEquals("", save.text.toString())
+                assertEquals("", copy.text.toString())
+                assertEquals("", share.text.toString())
+            }
+            // And back, with the room.
+            measure(labeled)
+            assertEquals(context.getString(R.string.action_copy), copy.text.toString())
+            assertEquals(context.getString(R.string.action_save), save.text.toString())
+        } finally {
+            Prefs.setCopyTextEnabled(context, was)
+        }
+    }
+
+    @Test
+    fun withCopyText_aBarWithJustTheRoomItTakes_keepsSaveAndShareLabeled() {
+        // Copy and Copy text, icons both, take more or less than Copy's label
+        // would: with only as much room as the bar shows them in, Save and
+        // Share keep their labels either way.
+        val (save, copy, share) = barButtons()
+        val bar = share.parent as ViewGroup
+        val copyText = (0 until bar.childCount).map { bar.getChildAt(it) as TextView }
+            .first { it.contentDescription == context.getString(R.string.action_copy_text) }
+        onMain { layOut(3 * WIDTH) }
+        val shown = bar.measuredWidth + (screen.resources.displayMetrics.density).toInt()
+        onMain {
+            bar.measure(
+                View.MeasureSpec.makeMeasureSpec(shown, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+        }
+        assertEquals(View.VISIBLE, copyText.visibility)
+        assertEquals("", copy.text.toString())
+        assertEquals(context.getString(R.string.action_save), save.text.toString())
+        assertEquals(context.getString(R.string.action_share), share.text.toString())
+    }
+
+    @Test
+    fun aSelectionInABarOfIcons_leavesCopyAnIcon_asWideAsTheOthers() {
+        val was = Prefs.isCopyTextEnabled(context)
+        Prefs.setCopyTextEnabled(context, false)
+        try {
+            onMain { screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)) }
+            val (save, copy, share) = barButtons()
+            val density = screen.resources.displayMetrics.density
+            // Room for the icons alone (as in buttonsWhoseLabelsDoNotFit_…).
+            val width = ((3 * (18 + 2 * 14 + 2 * 6) + 8) * density).toInt()
+            onMain { layOut(width) }
+            assertEquals("", copy.text.toString())
+            // A tap draws a selection; Copy is set to its label again, which
+            // the row has no room for.
+            onMain {
+                findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900))
+                layOut(width)
+            }
+            assertEquals("", copy.text.toString())
+            assertEquals("padded as an icon", save.measuredWidth, copy.measuredWidth)
+            assertEquals(share.measuredWidth, copy.measuredWidth)
+            assertEquals(context.getString(R.string.action_copy), copy.contentDescription?.toString())
+        } finally {
+            Prefs.setCopyTextEnabled(context, was)
+        }
+    }
+
+    @Test
+    fun aRowGoneToItsIcons_staysSo_measuredAgainAndAgain() {
+        // More left and More right, for a selection: labels too long for
+        // the room, icons that fit.
+        val left = moreButton(R.string.action_capture_more_left)
+        val right = moreButton(R.string.action_capture_more_right)
+        val density = screen.resources.displayMetrics.density
+        val width = (2 * (18 + 2 * 14 + 2 * 6) * density + 2 * 8 * density).toInt()
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onSidewaysRun = { _, _ -> }
+            findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900))
+        }
+        // (A label it no longer shows is no room to show it in: once was
+        // enough for the row to flip back, and then again.)
+        repeat(3) {
+            onMain { layOut(width) }
+            assertEquals("", left.text.toString())
+            assertEquals("", right.text.toString())
+            assertEquals(context.getString(R.string.action_capture_more_right), right.contentDescription?.toString())
+        }
+        val row = left.parent as View
+        assertTrue("within the screen", row.left >= 0 && row.right <= width)
+        assertEquals("one line, one height", left.height, right.height)
     }
 
     @Test
@@ -867,6 +1003,29 @@ class CropScreenTest {
         onMain { screen.setDelivering(false) }
         onMain { barButtons().first().performClick() }
         assertEquals(listOf(Delivery.SAVE), delivered)
+    }
+
+    @Test
+    fun aNoticeOnTwoLines_centersThem_andIsNoWiderThanTheLongest() {
+        val notice = "A notice up here long enough to take more than the one line"
+        lateinit var hint: TextView
+        onMain {
+            screen.showMessage(notice)
+            // Narrow, as a large font makes it.
+            layOut(WIDTH / 2)
+            hint = findText(screen, notice)!!
+        }
+        val lines = hint.layout
+        assertTrue("on more than one line", lines.lineCount > 1)
+        val room = hint.width - hint.compoundPaddingLeft - hint.compoundPaddingRight
+        val longest = (0 until lines.lineCount).maxOf { lines.getLineWidth(it) }
+        assertTrue("no wider than its longest line ($room for $longest)", room <= longest + 1)
+        for (i in 0 until lines.lineCount) {
+            val before = lines.getLineLeft(i)
+            val after = room - lines.getLineRight(i)
+            assertEquals("line $i centered", before, after, 1.5f)
+        }
+        assertEquals("centered on the screen", (WIDTH / 2).toDouble(), (hint.left + hint.right).toDouble(), 1.0)
     }
 
     /** Cancel, Copy and the share button of the main bar. */

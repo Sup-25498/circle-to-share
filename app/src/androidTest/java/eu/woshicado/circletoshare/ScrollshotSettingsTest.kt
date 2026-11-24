@@ -79,6 +79,13 @@ class ScrollshotSettingsTest {
     ) {
         onActivity { it.findViewById<EditText>(R.id.apps_search).setText(appLabel) }
         instrumentation.waitForIdleSync()
+        // (Into view: at a large font size the settings above the list can
+        // take the whole screen, and a row out of view isn't made.)
+        onActivity { activity ->
+            activity.findViewById<RecyclerView>(R.id.apps_list)
+                .scrollToPosition(1 + activity.shownApps().indexOf(app))
+        }
+        instrumentation.waitForIdleSync()
         onActivity { activity ->
             val list = activity.findViewById<RecyclerView>(R.id.apps_list)
             val row = list.findViewHolderForAdapterPosition(1 + activity.shownApps().indexOf(app))
@@ -219,3 +226,4 @@ class ScrollshotSettingsTest {
         }
     }
 }
+

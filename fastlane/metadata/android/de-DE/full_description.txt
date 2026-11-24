@@ -1,0 +1,27 @@
+Circle to Share erstellt von überall aus einen Screenshot, lässt dich ihn zuschneiden und teilt, kopiert oder speichert das Ergebnis. Teilen und kopieren ganz ohne Speichern auf deinem Gerät.
+
+Bei Aktivierung friert der Bildschirm und erlaubt Zuschneiden durch Einkreisen und
+darauffolgendes „Teilen“, „Kopieren“ oder „Speichern“.
+Ein geteilter oder kopierter Ausschnitt liegt nur im privaten Cache der App und landet nie in deiner Galerie;
+„Speichern“ legt ihn in deinen Screenshots-Ordner.
+
+So aktivierst du die App:
+
+* Ein-/Aus-Taste (über den Assistenten): gedrückt halten.
+* Wischen aus der Ecke (über den Assistenten): von einer unteren Ecke nach oben wischen.
+* Schnelleinstellungen-Kachel: antippen, die Benachrichtigungsleiste schließt sich vor dem Screenshot.
+* Schwebende Bubble: eine optionale Schaltfläche, die immer auf dem Bildschirm bleibt.
+* App-Verknüpfung oder Automatisierungs-App: das App-Symbol gedrückt halten und auf „Screenshot“ tippen, die Verknüpfung auf dem Startbildschirm ablegen oder eine Automatisierungs-App (Tasker, MacroDroid …) einen Screenshot auslösen lassen.
+
+Das Wichtigste:
+
+* Keine Berechtigungen: kein Internet, kein Speicherzugriff, keine Kamera, kein Mikrofon, kein Standort.
+* Auf deinem Gerät wird nichts gespeichert (außer du tippst „Speichern“).
+* QR-Codes im Screenshot werden hervorgehoben und lassen sich öffnen, kopieren oder teilen.
+* Optionales Ausrichten: Die Kanten des Ausschnitts richten sich an Schaltflächen, Karten und Bildern aus, die auf dem Bildschirm zu sehen sind.
+* Scrolling-Screenshots: „Mehr oben“/„Mehr unten“ im Zuschneidewerkzeug scrollen die App darunter.
+* Text kopieren: legt den Text in der Auswahl in die Zwischenablage, direkt vom Bildschirm gelesen oder per Texterkennung auf dem Gerät.
+
+Bedienungshilfe: Die Schnelleinstellungen-Kachel, die schwebende Bubble, das Ausrichten, Scrolling-Screenshots, „Text kopieren“ und eine Ausweichlösung für Geräte, die Screenshots nicht an Assistent-Apps von Drittanbietern weitergeben, nutzen die AccessibilityService-Schnittstelle von Android. Sie ist optional und bleibt aus, bis du dem Hinweis in der App zustimmst und sie einschaltest. In dem Moment, in dem du einen Screenshot auslöst, erstellt sie ihn und liest die Positionen der Elemente auf dem Bildschirm (zum Ausrichten) sowie ihren Text samt Aufbau (für „Text kopieren“). Der Text bleibt nur im Arbeitsspeicher, solange das Zuschneidewerkzeug geöffnet ist, und wird nur verwendet, wenn du auf „Text kopieren“ tippst. Die App darunter wird nur gescrollt, wenn du auf „Mehr oben“ oder „Mehr unten“ tippst. Alles wird auf deinem Gerät verarbeitet; nichts wird gespeichert oder irgendwohin gesendet. Die Liste deiner Apps auf der Einstellungsseite für Scrolling-Screenshots wird auf deinem Gerät gelesen, wenn du sie öffnest, und nicht gespeichert.
+
+Hinweis: Bildschirme, die Screenshots blockieren (Banking-Apps, DRM-geschützte Videos), lassen sich nicht aufnehmen.
