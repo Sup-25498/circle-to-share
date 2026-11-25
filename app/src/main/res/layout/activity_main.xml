@@ -31,15 +31,8 @@
              (see MainActivity.renderSetup). The whole row is the button. -->
         <LinearLayout
             android:id="@+id/setup_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader"
+            android:layout_marginTop="24dp">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -62,11 +55,7 @@
 
             <ImageView
                 android:id="@+id/setup_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -225,15 +214,7 @@
              they were left (see MainActivity.showTriggers). -->
         <LinearLayout
             android:id="@+id/triggers_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -259,11 +240,7 @@
 
             <ImageView
                 android:id="@+id/triggers_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -437,72 +414,89 @@
             android:layout_marginTop="32dp"
             android:background="?android:attr/listDivider" />
 
-        <TextView
-            style="@style/Widget.CircleToShare.SectionHeading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:drawableStart="@drawable/ic_section_crop"
-            android:text="@string/crop_tool_title" />
+        <!-- Folds by hand and stays as left (see MainActivity.folds). -->
+        <LinearLayout
+            android:id="@+id/crop_header"
+            style="@style/Widget.CircleToShare.SectionHeader">
 
-        <!-- What the crop tool does on a tap that is none of its buttons:
-             nothing in the tool itself says so. -->
-        <TextView
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_section_crop"
+                android:text="@string/crop_tool_title" />
+
+            <ImageView
+                android:id="@+id/crop_chevron"
+                style="@style/Widget.CircleToShare.SectionChevron" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/crop_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/crop_gestures_title"
-            android:textSize="14sp" />
+            android:orientation="vertical">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:lineSpacingExtra="4dp"
-            android:text="@string/crop_gestures"
-            android:textSize="14sp" />
+            <!-- What the crop tool does on a tap that is none of its buttons:
+                 nothing in the tool itself says so. -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/crop_gestures_title"
+                android:textSize="14sp" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_freeform"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/switch_freeform"
-            android:textSize="16sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:lineSpacingExtra="4dp"
+                android:text="@string/crop_gestures"
+                android:textSize="14sp" />
 
-        <TextView
-            android:id="@+id/freeform_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/switch_freeform_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_freeform"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/switch_freeform"
+                android:textSize="16sp" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_snap_edges"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/switch_snap_edges"
-            android:textSize="16sp" />
+            <TextView
+                android:id="@+id/freeform_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_freeform_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_snap"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/switch_snap"
-            android:textSize="16sp" />
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_snap_edges"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/switch_snap_edges"
+                android:textSize="16sp" />
 
-        <TextView
-            android:id="@+id/snap_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/switch_snap_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_snap"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/switch_snap"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/snap_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_snap_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
@@ -510,85 +504,468 @@
             android:layout_marginTop="32dp"
             android:background="?android:attr/listDivider" />
 
-        <TextView
-            style="@style/Widget.CircleToShare.SectionHeading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:drawableStart="@drawable/ic_section_extras"
-            android:text="@string/extras_title" />
-
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_qr"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/switch_qr"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/qr_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/switch_qr_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
-        <!-- Hidden while QR detection is off (see MainActivity). -->
+        <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
-            android:id="@+id/qr_color_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:id="@+id/extras_header"
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/qr_color_label"
-                android:textSize="16sp" />
-
-            <View
-                android:id="@+id/qr_color_swatch"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginEnd="12dp" />
-
-            <!-- Hex chars are enforced via an InputFilter in code — the
-                 android:digits attribute would swap in a key listener whose
-                 input type hides the IME's Done action. -->
-            <EditText
-                android:id="@+id/qr_color_input"
-                android:layout_width="110dp"
                 android:layout_height="wrap_content"
-                android:hint="@string/qr_color_hint"
-                android:inputType="textNoSuggestions"
-                android:maxLength="7"
-                android:maxLines="1"
-                android:imeOptions="actionDone"
-                android:importantForAutofill="no"
-                android:textSize="15sp" />
+                android:drawableStart="@drawable/ic_section_extras"
+                android:text="@string/extras_title" />
+
+            <ImageView
+                android:id="@+id/extras_chevron"
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
-        <!-- Two things in one row, as system settings do it: the text side
-             is a button that opens the scrollshot page (its chevron and the
-             line before the switch say so), the switch turns the feature on
-             and off. -->
         <LinearLayout
+            android:id="@+id/extras_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="vertical">
 
-            <LinearLayout
-                android:id="@+id/btn_scrollshot_settings"
-                android:layout_width="0dp"
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_qr"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/switch_qr"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/qr_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_qr_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <!-- Hidden while QR detection is off (see MainActivity). -->
+            <LinearLayout
+                android:id="@+id/qr_color_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/qr_color_label"
+                    android:textSize="16sp" />
+
+                <View
+                    android:id="@+id/qr_color_swatch"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginEnd="12dp" />
+
+                <!-- Hex chars are enforced via an InputFilter in code — the
+                     android:digits attribute would swap in a key listener whose
+                     input type hides the IME's Done action. -->
+                <EditText
+                    android:id="@+id/qr_color_input"
+                    android:layout_width="110dp"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/qr_color_hint"
+                    android:inputType="textNoSuggestions"
+                    android:maxLength="7"
+                    android:maxLines="1"
+                    android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- Two things in one row, as system settings do it: the text side
+                 is a button that opens the scrollshot page (its chevron and the
+                 line before the switch say so), the switch turns the feature on
+                 and off. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/btn_scrollshot_settings"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="56dp"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/switch_scrollshot"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/scrollshot_row_summary"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="8dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginEnd="12dp"
+                    android:background="?android:attr/listDivider" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_capture_more"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/switch_scrollshot" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/capture_more_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_capture_more_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="32dp"
+            android:background="?android:attr/listDivider" />
+
+        <!-- Folds by hand and stays as left (see MainActivity.folds). -->
+        <LinearLayout
+            android:id="@+id/experimental_header"
+            style="@style/Widget.CircleToShare.SectionHeader">
+
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
+                android:layout_width="0dp"
                 android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_section_experimental"
+                android:text="@string/experimental_title" />
+
+            <ImageView
+                android:id="@+id/experimental_chevron"
+                style="@style/Widget.CircleToShare.SectionChevron" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/experimental_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/experimental_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_copy_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/switch_copy_text"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/copy_text_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_copy_text_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <!-- Hidden while Copy text is off (see MainActivity). -->
+            <LinearLayout
+                android:id="@+id/copy_text_markdown_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_copy_text_markdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/switch_copy_text_markdown"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/switch_copy_text_markdown_note"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="32dp"
+            android:background="?android:attr/listDivider" />
+
+        <!-- Folds by hand and stays as left (see MainActivity.folds). -->
+        <LinearLayout
+            android:id="@+id/saving_header"
+            style="@style/Widget.CircleToShare.SectionHeader">
+
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_section_save"
+                android:text="@string/saving_title" />
+
+            <ImageView
+                android:id="@+id/saving_chevron"
+                style="@style/Widget.CircleToShare.SectionChevron" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/saving_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- The folder Save puts images in: the text side picks another
+                 (Android's folder picker), the button beside it, there only
+                 while one is picked, goes back to Pictures/Screenshots. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/btn_save_dir"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="56dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_dir"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/save_dir_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_dir_default"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btn_save_dir_reset"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="@string/save_dir_reset"
+                    android:tooltipText="@string/save_dir_reset"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_restore"
+                    app:iconTint="?attr/colorPrimary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/save_dir_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_save_per_app"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/switch_save_per_app"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_save_per_app_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="32dp"
+            android:background="?android:attr/listDivider" />
+
+        <!-- Folds by hand and stays as left (see MainActivity.folds). -->
+        <LinearLayout
+            android:id="@+id/about_header"
+            style="@style/Widget.CircleToShare.SectionHeader">
+
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_section_about"
+                android:text="@string/about_title" />
+
+            <ImageView
+                android:id="@+id/about_chevron"
+                style="@style/Widget.CircleToShare.SectionChevron" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/about_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/support_note"
+                android:textSize="14sp" />
+
+            <!-- Wraps where the two don't fit side by side (see WrapRow). -->
+            <eu.woshicado.circletoshare.WrapRow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btn_support"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_support" />
+
+                <Button
+                    android:id="@+id/btn_feedback"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_feedback" />
+            </eu.woshicado.circletoshare.WrapRow>
+
+            <!-- Wraps where the two don't fit side by side (see WrapRow). -->
+            <eu.woshicado.circletoshare.WrapRow
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btn_privacy"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_privacy" />
+
+                <Button
+                    android:id="@+id/btn_imprint"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_imprint" />
+            </eu.woshicado.circletoshare.WrapRow>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:background="?android:attr/listDivider" />
+
+            <!-- The app's language: picked in a dialog, the system's unless
+                 one is (see Language.kt). -->
+            <LinearLayout
+                android:id="@+id/btn_language"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/language"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/language_summary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/language_system"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- Opens the licenses page (its chevron says so), like the
+                 scrollshot row above. -->
+            <LinearLayout
+                android:id="@+id/btn_licenses"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="0dp"
                 android:background="?attr/selectableItemBackground"
                 android:clickable="true"
                 android:focusable="true"
@@ -605,14 +982,14 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/switch_scrollshot"
+                        android:text="@string/btn_licenses"
                         android:textColor="?attr/colorOnSurface"
                         android:textSize="16sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/scrollshot_row_summary"
+                        android:text="@string/licenses_row_summary"
                         android:textColor="?android:attr/textColorSecondary"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -625,205 +1002,6 @@
                     android:src="@drawable/ic_chevron_right"
                     app:tint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="32dp"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="?android:attr/listDivider" />
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switch_capture_more"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/switch_scrollshot" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/capture_more_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/switch_capture_more_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="32dp"
-            android:background="?android:attr/listDivider" />
-
-        <TextView
-            style="@style/Widget.CircleToShare.SectionHeading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:drawableStart="@drawable/ic_section_experimental"
-            android:text="@string/experimental_title" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/experimental_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_copy_text"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/switch_copy_text"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/copy_text_note"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/switch_copy_text_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
-        <!-- Hidden while Copy text is off (see MainActivity). -->
-        <LinearLayout
-            android:id="@+id/copy_text_markdown_group"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switch_copy_text_markdown"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/switch_copy_text_markdown"
-                android:textSize="16sp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/switch_copy_text_markdown_note"
-                android:textSize="13sp"
-                android:textColor="?android:attr/textColorSecondary" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="32dp"
-            android:background="?android:attr/listDivider" />
-
-        <TextView
-            style="@style/Widget.CircleToShare.SectionHeading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:drawableStart="@drawable/ic_section_about"
-            android:text="@string/about_title" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/support_note"
-            android:textSize="14sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_support"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_support" />
-
-            <Button
-                android:id="@+id/btn_feedback"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:text="@string/btn_feedback" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btn_privacy"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/btn_privacy" />
-
-            <Button
-                android:id="@+id/btn_imprint"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:text="@string/btn_imprint" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:background="?android:attr/listDivider" />
-
-        <!-- Opens the licenses page (its chevron says so), like the
-             scrollshot row above. -->
-        <LinearLayout
-            android:id="@+id/btn_licenses"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="56dp"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/btn_licenses"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/licenses_row_summary"
-                    android:textColor="?android:attr/textColorSecondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginStart="8dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_chevron_right"
-                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
         <Space

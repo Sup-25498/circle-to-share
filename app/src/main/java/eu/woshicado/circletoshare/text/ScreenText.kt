@@ -53,6 +53,9 @@ class TextNode(
 ) {
     val hasText get() = !text.isNullOrBlank()
 
+    /** Whether any node under it has text. */
+    val textBelow: Boolean get() = children.any { it.hasText || it.textBelow }
+
     val isImage get() = role == "image" || role == "graphic" || role == "img" ||
         cls == "Image" || cls == "ImageView"
 }

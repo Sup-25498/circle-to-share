@@ -30,3 +30,19 @@ fun animationSettleMs(context: Context, baseMs: Float, offMs: Long): Long {
     )
     return if (scale <= 0f) offMs else (baseMs * scale.coerceAtLeast(1f)).toLong()
 }
+
+/**
+ * How long to give the lock screen to be gone after an unlock (the tile's
+ * prompt) or after a show that found it going (the assistant's): long
+ * enough for the keyguard-exit transition to flip isKeyguardLocked(), short
+ * enough not to feel like a hang. Scaled like every other wait here: the
+ * exit is an animation, and at 2x a fixed 400 ms would look again while
+ * still locked and drop the capture the user just unlocked for.
+ */
+fun keyguardExitGraceMs(context: Context): Long =
+    animationSettleMs(context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS)
+        .coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
+
+private const val KEYGUARD_EXIT_GRACE_MS = 400f
+private const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
+private const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L

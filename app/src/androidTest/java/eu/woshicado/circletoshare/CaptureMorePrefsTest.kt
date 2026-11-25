@@ -1,13 +1,12 @@
 package eu.woshicado.circletoshare
 
-import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -17,41 +16,15 @@ class CaptureMorePrefsTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private var stepWas = 0
-    private var sidewaysWas: Int? = null
-    private fun prefs() = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
-    private var handlesWere = true
-    private var snapWas = false
-    private var appsWere: Set<String>? = null
+    @get:Rule
+    val kept = KeepPrefs()
+    private fun prefs() = kept.store
 
     @Before
-    fun remember() {
-        stepWas = Prefs.getCaptureMoreStep(context)
-        sidewaysWas = prefs().takeIf { it.contains("capture_more_step_sideways") }?.getInt("capture_more_step_sideways", 0)
-        handlesWere = Prefs.isCaptureMoreHandleRemovalEnabled(context)
-        snapWas = Prefs.isSnapEnabled(context)
+    fun setUp() {
         // The apps that have settings of their own on this device are out
-        // of the way for the test (what they are set to stays where it is).
-        val prefs = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
-        appsWere = prefs.getStringSet("scrollshot_apps", null)?.let { HashSet(it) }
-        prefs.edit().remove("scrollshot_apps").commit()
-    }
-
-    @After
-    fun restore() {
-        Prefs.setAppOverride(context, APP, false)
-        Prefs.setSnapEnabled(context, snapWas)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().apply {
-            if (appsWere == null) remove("scrollshot_apps") else putStringSet("scrollshot_apps", appsWere)
-        }.commit()
-        Prefs.setCaptureMoreStep(context, stepWas)
-        prefs().edit().apply {
-            sidewaysWas?.let { putInt("capture_more_step_sideways", it) } ?: remove("capture_more_step_sideways")
-        }.apply()
-        Prefs.setCaptureMoreHandleRemovalEnabled(context, handlesWere)
-        // (The writes are asynchronous and the test process is killed when
-        // the run ends: flush, so what was there is what stays.)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().commit()
+        // of the way for the test (put back with the rest: see KeepPrefs).
+        prefs().edit().remove("scrollshot_apps").commit()
     }
 
     @Test

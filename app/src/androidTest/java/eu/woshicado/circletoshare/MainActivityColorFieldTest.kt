@@ -9,9 +9,9 @@ import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -20,20 +20,12 @@ import org.junit.runner.RunWith
 class MainActivityColorFieldTest {
 
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private lateinit var colorBefore: String
+    @get:Rule
+    val kept = KeepPrefs()
 
     @Before
     fun setUp() {
-        colorBefore = Prefs.getQrColorHex(context)
         Prefs.setQrColorHex(context, START)
-    }
-
-    @After
-    fun tearDown() {
-        // The app's real preferences: put the color back, and make sure it
-        // is on disk before the test process goes away.
-        Prefs.setQrColorHex(context, colorBefore)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().commit()
     }
 
     /** Replace the whole field with [text] in one edit — which is what a

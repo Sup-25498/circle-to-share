@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.database.ContentObserver
@@ -12,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
 import android.text.Editable
@@ -37,11 +39,14 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
+import eu.woshicado.circletoshare.share.ShareHelper
 import eu.woshicado.circletoshare.tile.CaptureTileService
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
@@ -96,6 +101,18 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (answered(result)) Prefs.setTextConsentAsked(this)
             openAccessibilitySettings()
+        }
+
+    // Where the save folder's provider is asked about it (see renderSaveDir),
+    // and the latest such asking: an older one's answer is not shown.
+    private val saveDirWorker = Executors.newSingleThreadExecutor { Thread(it, "save-dir") }
+    private var saveDirRender = 0
+
+    // Android's folder picker, for where Save puts images. Picking is the
+    // grant: the app may then write to that folder, and only to it.
+    private val pickSaveDir =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+            if (tree != null) saveDirPicked(tree)
         }
 
     private fun answered(result: androidx.activity.result.ActivityResult) =
@@ -157,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                     val scrollLoc = IntArray(2).also { v.getLocationOnScreen(it) }
                     val focusBottom = focusLoc[1] + focus.height - scrollLoc[1]
                     val visibleBottom = v.height - ime.bottom
-                    val margin = (16 * resources.displayMetrics.density).toInt()
+                    val margin = dp(16)
                     val delta = focusBottom - visibleBottom + margin
                     if (delta > 0) (v as ScrollView).smoothScrollBy(0, delta)
                 }
@@ -173,18 +190,20 @@ class MainActivity : AppCompatActivity() {
         }
         setupHeader.readAsButton()
 
-        // "How to open it" folds too, but only by hand, and stays as left.
-        findViewById<View>(R.id.triggers_header).apply {
-            readAsButton()
-            setOnClickListener {
-                // (From what is shown, like the setup header: a tap always
-                // does something, whatever is stored.)
-                val open = this@MainActivity.findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
-                Prefs.setTriggersExpanded(this@MainActivity, open)
-                showTriggers(open)
+        // The other sections fold too, but only by hand, and stay as left.
+        for (fold in folds) {
+            findViewById<View>(fold.header).apply {
+                readAsButton()
+                setOnClickListener {
+                    // (From what is shown, like the setup header: a tap always
+                    // does something, whatever is stored.)
+                    val open = this@MainActivity.findViewById<View>(fold.content).visibility != View.VISIBLE
+                    Prefs.setSectionExpanded(this@MainActivity, fold.name, open)
+                    showFold(fold, open)
+                }
             }
+            showFold(fold, Prefs.isSectionExpanded(this, fold.name))
         }
-        showTriggers(Prefs.isTriggersExpanded(this))
 
         findViewById<Button>(R.id.btn_assistant_settings).setOnClickListener {
             openFirstAvailable(
@@ -276,9 +295,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Slider>(R.id.slider_bubble_opacity).apply {
             // Range and step come from the service, which snaps stored values
             // to exactly these.
-            valueFrom = ScreenshotAccessibilityService.BUBBLE_OPACITY_MIN.toFloat()
-            valueTo = ScreenshotAccessibilityService.BUBBLE_OPACITY_MAX.toFloat()
-            stepSize = ScreenshotAccessibilityService.BUBBLE_OPACITY_STEP.toFloat()
+            valueFrom = Prefs.BUBBLE_OPACITY_MIN.toFloat()
+            valueTo = Prefs.BUBBLE_OPACITY_MAX.toFloat()
+            stepSize = Prefs.BUBBLE_OPACITY_STEP.toFloat()
             value = valueTo
             setLabelFormatter { getString(R.string.bubble_opacity_value, it.roundToInt()) }
             // While a finger is on the slider the bubble only previews the
@@ -332,6 +351,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<View>(R.id.btn_save_dir).apply {
+            readAsButton()
+            setOnClickListener {
+                // Opening where the images go now: the folder picked, else
+                // Pictures, the one Screenshots is in.
+                // (The picker takes a document, not a tree: the tree's own.)
+                val start = Prefs.getSaveDir(this@MainActivity)?.let { saved ->
+                    runCatching { ShareHelper.treeRoot(Uri.parse(saved)) }.getOrNull()
+                } ?: DocumentsContract.buildDocumentUri(ShareHelper.EXTERNAL_STORAGE, "primary:Pictures")
+                try {
+                    pickSaveDir.launch(start)
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this@MainActivity, R.string.save_dir_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        findViewById<View>(R.id.btn_save_dir_reset).setOnClickListener {
+            Prefs.getSaveDir(this)?.let(::releaseSaveDir)
+            Prefs.setSaveDir(this, null)
+            renderSaveDir()
+        }
+        findViewById<MaterialSwitch>(R.id.switch_save_per_app).setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            Prefs.setSavePerApp(this, checked)
+        }
+
         findViewById<MaterialSwitch>(R.id.switch_qr).setOnCheckedChangeListener { _, checked ->
             // (Before the guard: the color follows the switch however it
             // came to be where it is.)
@@ -357,6 +402,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
         findViewById<Button>(R.id.btn_privacy).setOnClickListener { openUrl(R.string.url_privacy) }
         findViewById<Button>(R.id.btn_imprint).setOnClickListener { openUrl(R.string.url_imprint) }
+        findViewById<View>(R.id.btn_language).apply {
+            readAsButton()
+            setOnClickListener { pickLanguage() }
+        }
+        // (A new pick starts this screen again.)
+        findViewById<TextView>(R.id.language_summary).text = languageLabel(Language.picked())
         findViewById<View>(R.id.btn_licenses).apply {
             readAsButton()
             setOnClickListener {
@@ -499,6 +550,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        saveDirWorker.shutdownNow()
+        super.onDestroy()
+    }
+
     override fun onStop() {
         contentResolver.unregisterContentObserver(setupObserver)
         // Leaving mid-drag (rotation, another window taking over) may not end
@@ -570,13 +626,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         syncingSwitches = true
-        val bubbleEnabled = ScreenshotAccessibilityService.isBubbleEnabled(this)
+        val bubbleEnabled = Prefs.isBubbleEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_bubble).isChecked = bubbleEnabled
         // Not under the user's finger: this also runs when a watched setting
         // changes, which can be mid-drag.
         if (!opacityTracking) {
             findViewById<Slider>(R.id.slider_bubble_opacity).value =
-                ScreenshotAccessibilityService.getBubbleOpacity(this).toFloat()
+                Prefs.getBubbleOpacity(this).toFloat()
         }
         setOpacityRowVisible(bubbleEnabled)
         renderTriggersSummary()
@@ -591,6 +647,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_capture_more).isChecked =
             Prefs.isCaptureMoreEnabled(this)
 
+        findViewById<MaterialSwitch>(R.id.switch_save_per_app).isChecked = Prefs.isSavePerApp(this)
+        renderSaveDir()
+
         val qr = Prefs.isQrDetectEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked = qr
         setQrColorRowVisible(qr)
@@ -599,6 +658,72 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.copy_text_markdown_group).visibility = if (copyText) View.VISIBLE else View.GONE
         findViewById<MaterialSwitch>(R.id.switch_copy_text_markdown).isChecked = Prefs.isCopyTextMarkdown(this)
         syncingSwitches = false
+    }
+
+    /** Keep the folder [tree] the user picked for Save, and give up the one
+     *  picked before: Android grants an app only so many folders. */
+    private fun saveDirPicked(tree: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(tree, SAVE_DIR_ACCESS)
+        } catch (e: SecurityException) {
+            Toast.makeText(this, R.string.save_dir_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        val before = Prefs.getSaveDir(this)
+        Prefs.setSaveDir(this, tree.toString())
+        if (before != null && before != tree.toString()) releaseSaveDir(before)
+        renderSaveDir()
+    }
+
+    private fun releaseSaveDir(tree: String) {
+        runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(tree), SAVE_DIR_ACCESS) }
+    }
+
+    private fun languageLabel(tag: String?): String =
+        tag?.let(Language::name) ?: getString(R.string.language_system)
+
+    /** The app's language, picked from the system's, English and the
+     *  translations; a new one restarts the app's screens in it. */
+    private fun pickLanguage() {
+        val options = Language.options()
+        val picked = Language.picked()
+        // (None checked for a language picked elsewhere that isn't offered.)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.language)
+            .setSingleChoiceItems(options.map(::languageLabel).toTypedArray(), options.indexOf(picked)) { dialog, which ->
+                dialog.dismiss()
+                if (options[which] != picked) Language.pick(this, options[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Where Save puts images, under its row — and whether it can: a
+     *  folder deleted, or its card taken out, is saved around, not into.
+     *  That takes asking the folder's provider, which may be slow (a card,
+     *  one that goes online): in the background, said when known. */
+    private fun renderSaveDir() {
+        val tree = Prefs.getSaveDir(this)?.let(Uri::parse)
+        val summary = findViewById<TextView>(R.id.save_dir_summary)
+        findViewById<View>(R.id.btn_save_dir_reset).visibility = if (tree != null) View.VISIBLE else View.GONE
+        val render = ++saveDirRender
+        if (tree == null) {
+            summary.text = getString(R.string.save_dir_default)
+            return
+        }
+        // Its path at once, where the URI has it, until the provider has said.
+        summary.text = ShareHelper.saveDirPath(tree) ?: ""
+        if (saveDirWorker.isShutdown) return
+        saveDirWorker.execute {
+            val name = ShareHelper.describeSaveDir(this, tree)
+            val text = when {
+                !ShareHelper.isSaveDirUsable(this, tree) ->
+                    if (name != null) getString(R.string.save_dir_unusable, name)
+                    else getString(R.string.save_dir_unusable_unnamed)
+                else -> name ?: tree.toString()
+            }
+            runOnUiThread { if (render == saveDirRender && !isDestroyed) summary.text = text }
+        }
     }
 
     /** The two setup steps' status lines, and the section's header after
@@ -697,9 +822,9 @@ class MainActivity : AppCompatActivity() {
     private fun showSetupSteps(show: Boolean) =
         showSection(R.id.setup_header, R.id.setup_chevron, R.id.setup_content, show)
 
-    private fun showTriggers(show: Boolean) {
-        showSection(R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content, show)
-        renderTriggersSummary()
+    private fun showFold(fold: Fold, show: Boolean) {
+        showSection(fold.header, fold.chevron, fold.content, show)
+        fold.then()
     }
 
     /** Folded, the header of "How to open it" says what of the section is
@@ -708,7 +833,7 @@ class MainActivity : AppCompatActivity() {
      *  service it needs is off, which Setup's header says) the header would
      *  send the user to a switch that is on already. */
     internal fun renderTriggersSummary(
-        bubbleOn: Boolean = ScreenshotAccessibilityService.isBubbleEnabled(this)
+        bubbleOn: Boolean = Prefs.isBubbleEnabled(this)
     ) {
         val folded = findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
         findViewById<TextView>(R.id.triggers_summary).apply {
@@ -804,7 +929,7 @@ class MainActivity : AppCompatActivity() {
      *  service running, puts its own answer here. */
     @VisibleForTesting
     internal var fallbackCheck: () -> Boolean = {
-        ScreenshotAccessibilityService.instance != null && Prefs.hasAccessibilityConsent(this)
+        ScreenshotAccessibilityService.whyNotReady(this) == null
     }
 
     private fun openAccessibilitySettings() =
@@ -835,6 +960,23 @@ class MainActivity : AppCompatActivity() {
     private var assistantStaleSince = 0L
     private var fallbackStaleSince = 0L
 
+    /** A section that folds under its header by hand: kept by [name].
+     *  [then]: what changes with it, open or folded. */
+    private class Fold(
+        val name: String, val header: Int, val chevron: Int, val content: Int, val then: () -> Unit = {},
+    )
+
+    private val folds = listOf(
+        Fold("triggers", R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content) {
+            renderTriggersSummary()
+        },
+        Fold("crop", R.id.crop_header, R.id.crop_chevron, R.id.crop_content),
+        Fold("extras", R.id.extras_header, R.id.extras_chevron, R.id.extras_content),
+        Fold("experimental", R.id.experimental_header, R.id.experimental_chevron, R.id.experimental_content),
+        Fold("saving", R.id.saving_header, R.id.saving_chevron, R.id.saving_content),
+        Fold("about", R.id.about_header, R.id.about_chevron, R.id.about_content),
+    )
+
     companion object {
         /**
          * Whether a service seen named-but-not-running counts as stale (see
@@ -859,6 +1001,9 @@ class MainActivity : AppCompatActivity() {
         const val STATE_DISCLOSURE_OFFERED = "disclosure_offered"
         const val STATE_SETUP_OPENED = "setup_opened_by_hand"
         const val STATE_SETUP_WAS_DONE = "setup_was_done"
+
+        private const val SAVE_DIR_ACCESS =
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
         val WATCHED_SETTINGS = listOf(
             VOICE_INTERACTION_SERVICE,

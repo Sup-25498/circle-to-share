@@ -22,16 +22,18 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.animationSettleMs
+import eu.woshicado.circletoshare.keyguardExitGraceMs
+import eu.woshicado.circletoshare.capture.CaptureInfo
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.capture.ScrollCapture
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
-import java.io.IOException
 
 /**
  * Full-screen overlay shown when the assistant gesture fires: displays the
@@ -54,16 +56,28 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     // System shot set aside on the bubble path — used only if the clean
     // re-capture fails (it shows the bubble, which beats failing outright).
     private var fallbackSystemShot: Bitmap? = null
-    // Snap bounds collected at onShow — the accessibility framework hasn't
-    // yet recomputed visibility for our (occluding) session window at that
-    // moment, so the app's node tree is still fully visible. Collecting later
-    // (when the screenshot arrives) yields a sparse, occlusion-clipped set.
-    private var pendingSnap: eu.woshicado.circletoshare.crop.SnapBounds? = null
-    private var pendingAreas: List<Rect> = emptyList()
-    // The text on screen at the same moment, for "Copy text".
-    private var pendingText: eu.woshicado.circletoshare.text.PendingScreenText? = null
+    // What the service read off the screen at onShow (see CaptureInfo) — the
+    // accessibility framework hasn't yet recomputed visibility for our
+    // (occluding) session window at that moment, so the app's node tree is
+    // still fully visible. Collecting later (when the screenshot arrives)
+    // yields a sparse, occlusion-clipped set.
+    private var pending = CaptureInfo()
     // Whether the picture taken over from the bubble's tool is a scrollshot.
     private var pendingScrollshot = false
+    // The app the picture is of as the system's assist data for this show
+    // names it (see onHandleAssist), where the service didn't say (see info).
+    private var assistApp: String? = null
+
+    // Android gives the session a window context in the system's language,
+    // not the app's (see Language): wrapped, for whichever it is.
+    private var inLanguage: Pair<Context, Context>? = null
+
+    override fun getContext(): Context {
+        val base = super.getContext()
+        inLanguage?.let { (was, wrapped) -> if (was === base) return wrapped }
+        return Language.wrap(base).also { inLanguage = base to it }
+    }
+
     // When the session was shown — anchor for the zoom-settle deadline below.
     private var showUptime = 0L
 
@@ -172,6 +186,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // of the lock screen, with a Share that goes nowhere until the next
         // unlock. Keep the window from appearing at all (onShow says why).
         if (!visible && !awaitingUnlock) {
+            assistApp = null // a new show: the one before named its own
             refusedShow = keyguardLocked()
             setUiEnabled(!refusedShow)
         }
@@ -190,9 +205,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     private fun awaitUnlockThenOpen() {
         awaitingUnlock = true
         val gen = showGeneration
-        val deadline = SystemClock.uptimeMillis() + animationSettleMs(
-            context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS
-        ).coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
+        val deadline = SystemClock.uptimeMillis() + keyguardExitGraceMs(context)
         val check = object : Runnable {
             override fun run() {
                 if (gen != showGeneration || !awaitingUnlock) return // hidden meanwhile
@@ -215,6 +228,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        // (Before anything is said or built: see Language.refresh.)
+        Language.refresh(context)
         // Re-invoking the assistant while the overlay is already up re-fires
         // onShow with a fresh system screenshot — of our own overlay. Ignore it,
         // or each activation would bake another layer of dim/crop UI into the
@@ -241,23 +256,26 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         showUptime = SystemClock.uptimeMillis()
         // Grab the snap bounds NOW — before the accessibility framework
         // notices our window covering the app and marks its nodes invisible
-        // (or drops the window from getWindows() entirely).
-        pendingSnap = ScreenshotAccessibilityService.instance
-            ?.takeIf { it.snapEnabledNow() }
-            ?.collectSnapBounds()
-        // The same for what scrolls sideways, for the "↔" button.
-        pendingAreas = ScreenshotAccessibilityService.instance?.sidewaysAreasNow() ?: emptyList()
+        // (or drops the window from getWindows() entirely). The same for what
+        // scrolls sideways, for the "↔" button, and the app in front.
+        val reader = ScreenshotAccessibilityService.instance
+        pending = CaptureInfo(
+            snap = reader?.takeIf { it.snapEnabledNow() }?.collectSnapBounds(),
+            areas = reader?.sidewaysAreasNow() ?: emptyList(),
+            app = reader?.saveAppNow(),
+        )
         // And the text, given this long of the same moment: as the session's
         // window comes up, the app's nodes are hidden from the service too, and
         // a walk still under way gets no further (the bubble's and tile's
         // overlay hides nothing; their walk carries on in the background). Not
         // over a picture the bubble's tool has open: that one's text is taken
         // over with it, below.
-        if (ScreenshotAccessibilityService.instance?.openOverlayScreenshot() == null) {
-            pendingText = ScreenshotAccessibilityService.instance?.collectScreenText()
+        if (reader?.openOverlayScreenshot() == null) {
+            val text = reader?.collectScreenText()
+            pending = pending.copy(text = text)
             val waitStart = SystemClock.uptimeMillis()
-            pendingText?.awaitFor(SESSION_TEXT_MS)
-            if (pendingText != null) {
+            text?.awaitFor(SESSION_TEXT_MS)
+            if (text != null) {
                 android.util.Log.d("CircleToShare", "screen text: show waited ${SystemClock.uptimeMillis() - waitStart} ms")
             }
         }
@@ -306,10 +324,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // app as it is at this moment, which the frozen picture may no longer
         // match (moving content, or a rotation since).
         if (reuse != null) {
-            pendingSnap = service.openOverlaySnapBounds()
-            pendingAreas = service.openOverlaySidewaysAreas()
-            pendingText?.cancel()
-            pendingText = service.takeOverlayText()
+            pending.text?.cancel()
+            pending = service.takeOverlayInfo() ?: CaptureInfo()
             pendingScrollshot = service.openOverlayIsGrown()
         }
         // "Capture more" is the accessibility service's to do (see
@@ -442,11 +458,10 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         ui.removeCallbacks(screenshotTimeout)
         screenshot = null
         fallbackSystemShot = null
-        pendingSnap = null
-        pendingAreas = emptyList()
-        pendingText?.cancel()
-        pendingText = null
+        pending.text?.cancel()
+        pending = CaptureInfo()
         pendingScrollshot = false
+        assistApp = null
         awaitingOwnCapture = false
         // Drop the frozen image now, so the next show doesn't flash this
         // session's (possibly sensitive) screenshot while the new capture is
@@ -528,9 +543,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         android.util.Log.d(
             "CircleToShare",
             "assist shot ${software.width}x${software.height}, " +
-                "snap rects: ${pendingSnap?.rects?.size ?: 0}"
+                "snap rects: ${pending.snap?.rects?.size ?: 0}"
         )
-        cropScreen.setBitmap(software, pendingSnap, pendingScrollshot, pendingText)
+        cropScreen.setBitmap(software, pending.snap, pendingScrollshot, pending.text)
     }
 
     /**
@@ -543,14 +558,14 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     private fun captureMore(more: CropScreen.More) {
         val shot = screenshot ?: return
         val service = ScreenshotAccessibilityService.instance ?: return
-        if (service.adoptCaptureMore(more, shot, pendingSnap, pendingAreas)) hide()
+        if (service.adoptCaptureMore(more, shot, info())) hide()
     }
 
     /** The "↔" button: the parts of the screen that scroll sideways,
      *  outlined for the user to choose a row from (or draw one). */
     private fun pickSidewaysArea() {
         val shot = screenshot ?: return
-        cropScreen.pickArea(pendingAreas.map { ScrollCapture.toPicture(it, display(), shot) })
+        cropScreen.pickArea(pending.areas.map { ScrollCapture.toPicture(it, display(), shot) })
     }
 
     /** "More left" or "More right" over a chosen row: the run of it is the
@@ -559,35 +574,76 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         val shot = screenshot ?: return
         val service = ScreenshotAccessibilityService.instance ?: return
         val area = ScrollCapture.toDisplay(inPicture, display(), shot)
-        if (service.adoptCaptureSideways(area, more, shot, pendingSnap, pendingAreas, inPicture)) hide()
+        if (service.adoptCaptureSideways(area, more, shot, info(), inPicture)) hide()
     }
 
     private fun display(): Rect = ScrollCapture.displayBounds(context)
 
-    private fun deliver(action: Delivery, rect: Rect?) {
-        val bitmap = screenshot ?: return
-        val delivered = try {
-            ShareHelper.deliver(context, bitmap, rect, action)
-        } catch (e: IOException) {
-            fail(R.string.error_save_failed)
-            return
-        } catch (e: Exception) {
-            fail(R.string.error_capture_failed)
-            return
-        } ?: return
-        // A share or a copy shows for itself (the share sheet, the system's
-        // clipboard notice); a save has to be told — and offers to show it.
-        if (action == Delivery.SAVE) say(R.string.saved, SAVED_MESSAGE_MS, openOnTap = delivered) else hide()
+    /**
+     * What the system tells the assistant of the app in front: of all it
+     * sends, only the package of the focused activity is read, and only for
+     * a save into one folder per app. It comes only with Android's "Use text
+     * from screen" on — the accessibility service's view, where it runs,
+     * needs no such thing and counts first (see [info]).
+     */
+    override fun onHandleAssist(state: AssistState) {
+        if (!state.isFocused || !Prefs.isSavePerApp(context)) return
+        assistApp = state.assistStructure?.activityComponent?.packageName
+            ?: state.assistData?.getString(Intent.EXTRA_ASSIST_PACKAGE)
     }
 
-    private fun fail(messageRes: Int) = say(messageRes, MESSAGE_MS)
+    /** What was read with the picture, with the app it is of as far as is
+     *  known: the service's view first, else the assist data's. */
+    private fun info(): CaptureInfo =
+        if (pending.app == null && assistApp != null) pending.copy(app = assistApp) else pending
 
-    /** Say [messageRes] and close: in the service's notice if it runs, else
+    private fun deliver(action: Delivery, rect: Rect?) {
+        val bitmap = screenshot ?: return
+        val bounds = ShareHelper.bounds(bitmap, rect) ?: return
+        val gen = showGeneration
+        val app = info().app // (before a hide forgets it)
+        if (action == Delivery.SAVE) {
+            // A save has to be told — and offers to show it — but needs this
+            // window no more: out of the way at once. With the service, its
+            // notice says how it went; without, this window does, in place
+            // of the tool, "Saving…" until then.
+            val inPlace = ScreenshotAccessibilityService.instance == null
+            if (inPlace) showSaving() else hide()
+            ShareHelper.deliver(context, bitmap, bounds, action, app) { result ->
+                val message = ShareHelper.resultMessage(context, result)
+                val openOnTap = result.getOrNull()?.uri
+                if (inPlace && gen == showGeneration && visible) {
+                    say(message, if (result.isSuccess) SAVED_MESSAGE_MS else MESSAGE_MS, openOnTap, replacing = true)
+                } else {
+                    ScreenshotAccessibilityService.reportSave(context, message, openOnTap)
+                }
+            }
+            return
+        }
+        // A share or a copy shows for itself (the share sheet, the system's
+        // clipboard notice), from this window while it is up.
+        cropScreen.shareOrCopy(bitmap, bounds, action, app, isOpen = { gen == showGeneration && visible }) { failure ->
+            if (failure == null) hide() else fail(failure)
+        }
+    }
+
+    /** "Saving…" in place of the tool, until [say] replaces it: a touch
+     *  doesn't close it, or how the save went would go unsaid (a toast from
+     *  here is dropped, see notify). */
+    private fun showSaving() {
+        messageShowing = true
+        cropScreen.showMessage(context.getString(R.string.saving), cancelable = false)
+    }
+
+    private fun fail(messageRes: Int) = say(context.getString(messageRes), MESSAGE_MS)
+
+    /** Say [message] and close: in the service's notice if it runs, else
      *  in place of the tool for [shownForMs]. With [openOnTap], a tap on the
-     *  message opens that saved image. */
-    private fun say(messageRes: Int, shownForMs: Long, openOnTap: Uri? = null) {
+     *  message opens that saved image. [replacing]: it takes the place of
+     *  the message showing ("Saving…"); else one already showing stays. */
+    private fun say(message: String, shownForMs: Long, openOnTap: Uri? = null, replacing: Boolean = false) {
         if (ScreenshotAccessibilityService.instance != null) {
-            ScreenshotAccessibilityService.notify(context, messageRes, openOnTap)
+            ScreenshotAccessibilityService.notify(context, message, openOnTap)
             hide()
             return
         }
@@ -595,9 +651,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // system drops (see notify). But this window is up: say it here, in
         // place of the tool, and close after a reading's time — or at a
         // touch, which the screen passes on as a cancel.
-        if (messageShowing) return
+        if (messageShowing && !replacing) return
         messageShowing = true
-        val message = context.getString(messageRes)
         if (openOnTap != null) {
             cropScreen.showMessage(ShareHelper.withViewAction(context, message)) {
                 // Closed after, not before: hiding first takes the session's
@@ -625,13 +680,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // long enough to tap it, to view the image).
         const val SAVED_MESSAGE_MS = 3500L
 
-        // How long a lock screen that was up at the show gets to finish
-        // going away (the tile's values for the same wait; scaled with the
-        // system's animation speed like every other wait here), and how
-        // often to look.
-        const val KEYGUARD_EXIT_GRACE_MS = 400f
-        const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
-        const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L
+        // How often to look whether a lock screen that was up at the show
+        // has gone (see keyguardExitGraceMs).
         const val KEYGUARD_POLL_MS = 50L
     }
 }

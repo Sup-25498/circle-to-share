@@ -61,11 +61,11 @@ internal class AnchoredCard(
         )
         return (bars?.top ?: 0)..(root.height - (bars?.bottom ?: 0))
     }
-    private val margin = dp(16)
+    private val margin = activity.dp(16)
     private val below = frame.bottom - (anchorAt[1] + anchor.height) - margin
     private val above = anchorAt[1] - frame.top - margin
 
-    val width = min(dp(MAX_WIDTH_DP), frame.width() - 2 * margin)
+    val width = min(activity.dp(MAX_WIDTH_DP), frame.width() - 2 * margin)
 
     /** The height free on the roomier side of the anchor. */
     val room = max(below, above)
@@ -98,11 +98,11 @@ internal class AnchoredCard(
             ?: if (below >= above) anchorAt[1] + anchor.height else anchorAt[1] - height
 
         val card = PopupWindow(content, width, ViewGroup.LayoutParams.WRAP_CONTENT, true)
-        val elevation = dp(6).toFloat()
+        val elevation = activity.dp(6f)
         card.setBackgroundDrawable(
             MaterialShapeDrawable.createWithElevationOverlay(activity, elevation).apply {
                 shapeAppearanceModel = ShapeAppearanceModel.builder()
-                    .setAllCornerSizes(dp(16).toFloat()).build()
+                    .setAllCornerSizes(activity.dp(16f)).build()
                 fillColor = ColorStateList.valueOf(
                     MaterialColors.getColor(anchor, com.google.android.material.R.attr.colorSurfaceContainerHigh)
                 )
@@ -162,8 +162,6 @@ internal class AnchoredCard(
     override fun onStop(owner: LifecycleOwner) {
         popup?.dismiss()
     }
-
-    private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
     companion object {
         private const val MAX_WIDTH_DP = 320

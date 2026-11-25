@@ -1,8 +1,10 @@
 package eu.woshicado.circletoshare.capture
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.R
 
 /**
@@ -14,6 +16,9 @@ import eu.woshicado.circletoshare.R
  * app shortcut). Shows nothing; hands back the shortcut and is gone.
  */
 class CaptureShortcutActivity : Activity() {
+
+    // (In the language picked, before Android 13 too: see Language.)
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Language.wrap(base))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

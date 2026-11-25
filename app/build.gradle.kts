@@ -26,6 +26,13 @@ val hasReleaseSigning = releaseStoreFile != null
 // -Pplay builds the Google Play flavor; without it, the foss build.
 val playBuild = providers.gradleProperty("play").isPresent
 
+// The languages the app is translated into (values-xx, values-xx-rYY), for
+// its language picker (Language.kt). English is the untranslated values/.
+val translations = file("src/main/res").list().orEmpty().sorted()
+    .filter { file("src/main/res/$it/strings.xml").exists() }
+    .mapNotNull { Regex("values-([a-z]{2,3})(?:-r([A-Z]{2}))?").matchEntire(it) }
+    .map { m -> m.groupValues.drop(1).filter(String::isNotEmpty).joinToString("-") }
+
 android {
     namespace = "eu.woshicado.circletoshare"
     compileSdk = 36
@@ -34,10 +41,12 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 30
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.4.0"
+        versionCode = 19
+        versionName = "0.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String[]", "TRANSLATIONS", translations.joinToString(", ", "{", "}") { "\"$it\"" })
     }
 
     // Where the build is distributed decides how tips are taken: Google Play
@@ -89,9 +98,31 @@ android {
         }
     }
 
-    // The OCR models are memory-mapped straight out of the APK.
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // Play installs only the device's languages from a bundle unless told
+    // otherwise; the language picker needs them all.
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     androidResources {
+        // The OCR models are memory-mapped straight out of the APK.
         noCompress += "tflite"
+        // Lists the translations for Android 13+, which then offers them in
+        // its App languages settings too (res/resources.properties says
+        // what values/ is in).
+        generateLocaleConfig = true
+    }
+
+    lint {
+        // A string a translation doesn't have yet falls back to English
+        // (values/): listed in the lint report, not a failed release build.
+        warning += "MissingTranslation"
     }
 
     // TensorFlow Lite's native code for four ABIs, compressed in the APK (and

@@ -11,10 +11,10 @@ import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
+import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.MainActivity
-import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
-import eu.woshicado.circletoshare.animationSettleMs
+import eu.woshicado.circletoshare.keyguardExitGraceMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 
 /**
@@ -29,24 +29,13 @@ import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
  */
 class CaptureTileService : TileService() {
 
-    companion object {
-        // Long enough for the keyguard-exit transition to flip
-        // isKeyguardLocked(), short enough not to feel like a hang. Scaled
-        // like every other wait here: the exit is an animation, and at 2x a
-        // fixed 400ms would retry while still locked and drop the capture the
-        // user just authenticated for.
-        private const val KEYGUARD_EXIT_GRACE_MS = 400f
-        private const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
-        private const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L
+    // (In the language picked, before Android 13 too: see Language.)
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Language.wrap(base))
 
+    companion object {
         // How long after asking for an unlock a further tap is taken for the
         // same request. The prompt covers the tile well within this.
         private const val UNLOCK_PROMPT_DEBOUNCE_MS = 1000L
-
-        /** How long to give the keyguard to be gone after an unlock. */
-        internal fun keyguardExitGraceMs(context: Context): Long =
-            animationSettleMs(context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS)
-                .coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
     }
 
     private val ui = Handler(Looper.getMainLooper())
@@ -100,20 +89,14 @@ class CaptureTileService : TileService() {
     /** Up to Android 14, and until the tile has been bound once since SystemUI
      *  started (for its activity, see onStartListening). */
     override fun onClick() {
-        // Handle "no accessibility service" here, before any unlock prompt:
-        // startActivityAndCollapse only works while the click's window token is
-        // granted, and SystemUI revokes that once the tile stops listening —
-        // so the same call made after unlockAndRun is silently dropped, and the
-        // user would have authenticated for nothing.
-        if (ScreenshotAccessibilityService.instance == null) {
-            Toast.makeText(this, ScreenshotAccessibilityService.whyNotRunning(this), Toast.LENGTH_LONG).show()
-            openApp()
-            return
-        }
-        // Likewise a service that is on but not yet agreed to: the app's
-        // screen is where the disclosure is put to the user.
-        if (!Prefs.hasAccessibilityConsent(this)) {
-            Toast.makeText(this, R.string.error_needs_consent, Toast.LENGTH_LONG).show()
+        // Handle "no accessibility service" (or one not agreed to) here,
+        // before any unlock prompt: startActivityAndCollapse only works while
+        // the click's window token is granted, and SystemUI revokes that once
+        // the tile stops listening — so the same call made after unlockAndRun
+        // is silently dropped, and the user would have authenticated for
+        // nothing.
+        ScreenshotAccessibilityService.whyNotReady(this)?.let {
+            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
             openApp()
             return
         }
@@ -132,14 +115,15 @@ class CaptureTileService : TileService() {
      * check is authoritative; [Refusal.LOCKED] is what drives the prompt.
      */
     private fun capture(mayPromptUnlock: Boolean) {
-        // Re-read rather than capture it: on the post-unlock retry the service
-        // may have gone away while the user was authenticating. Only toast
-        // there — openApp() can no longer collapse the shade (see onClick).
-        val service = ScreenshotAccessibilityService.instance
-        if (service == null) {
-            Toast.makeText(this, ScreenshotAccessibilityService.whyNotRunning(this), Toast.LENGTH_LONG).show()
+        // Asked again rather than taken from onClick: on the post-unlock
+        // retry the service may have gone away while the user was
+        // authenticating. Only toast there — openApp() can no longer collapse
+        // the shade (see onClick).
+        ScreenshotAccessibilityService.whyNotReady(this)?.let {
+            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
             return
         }
+        val service = ScreenshotAccessibilityService.instance ?: return
         // Only a tap's own attempt can collapse the panel by an activity: by the
         // retry after an unlock, SystemUI has taken the click's grant back
         // (see onClick) — and the unlock has collapsed the panel anyway.
@@ -148,12 +132,10 @@ class CaptureTileService : TileService() {
             ScreenshotAccessibilityService.Refusal.LOCKED ->
                 if (mayPromptUnlock) promptUnlockThenCapture() else notifyLocked()
             // The shade stays open, which is the feedback: a crop tool is
-            // already up and about to be visible anyway.
-            ScreenshotAccessibilityService.Refusal.BUSY -> Unit
-            // onClick checks first, so this is not expected — and by the
-            // retry it is too late to open the app (see onClick).
-            ScreenshotAccessibilityService.Refusal.NO_CONSENT ->
-                Toast.makeText(this, R.string.error_needs_consent, Toast.LENGTH_LONG).show()
+            // already up and about to be visible anyway. (Not agreed to:
+            // said above, see whyNotReady.)
+            ScreenshotAccessibilityService.Refusal.BUSY,
+            ScreenshotAccessibilityService.Refusal.NO_CONSENT -> Unit
         }
     }
 

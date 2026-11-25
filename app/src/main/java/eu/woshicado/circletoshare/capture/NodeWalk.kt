@@ -46,4 +46,31 @@ internal object NodeWalk {
         // A step back: neighbours can overlap by a margin.
         return (lo - 1).coerceAtLeast(0)
     }
+
+    /**
+     * [node]'s children that can be on [display], in order, to [visit], for
+     * as long as [more]: where they are many and run down the page, from
+     * the first that reaches the screen to the last that does; else all.
+     */
+    inline fun childrenOnScreen(
+        node: AccessibilityNodeInfo, display: Rect, more: () -> Boolean, visit: (AccessibilityNodeInfo) -> Unit,
+    ) {
+        val count = node.childCount
+        val sorted = count >= SEARCH_MIN && runsDownThePage(node, count)
+        var i = if (sorted) firstChildReachingScreen(node, count, display) else 0
+        var seenOnScreen = false
+        val bounds = Rect()
+        while (i < count && more()) {
+            val child = node.getChild(i++) ?: continue
+            if (sorted) {
+                child.getBoundsInScreen(bounds)
+                if (!bounds.isEmpty && bounds.top >= display.bottom) {
+                    if (seenOnScreen) break
+                } else if (Rect.intersects(bounds, display)) {
+                    seenOnScreen = true
+                }
+            }
+            visit(child)
+        }
+    }
 }

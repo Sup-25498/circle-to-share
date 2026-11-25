@@ -47,13 +47,10 @@ open class TreeMarkdown(protected val crop: Box) {
         return text
     }
 
-    private fun textBelow(node: TextNode): Boolean =
-        node.children.any { it.hasText || textBelow(it) }
-
     /** Inline runs of a subtree: only leaves inside the crop. */
     fun inline(node: TextNode): List<Run> {
         if (!touches(node)) return emptyList()
-        val runs: List<Run> = if (node.children.isNotEmpty() && textBelow(node)) {
+        val runs: List<Run> = if (node.children.isNotEmpty() && node.textBelow) {
             node.children.flatMap { inline(it) }
         } else {
             val raw = node.text ?: return emptyList()
@@ -91,7 +88,7 @@ open class TreeMarkdown(protected val crop: Box) {
             role in LIST_ITEM_ROLES -> Kind.LI
             role == "table" || role == "grid" -> Kind.TABLE
             role == "pre" -> Kind.PRE
-            !node.web && node.hasText && !textBelow(node) -> Kind.NATIVE
+            !node.web && node.hasText && !node.textBelow -> Kind.NATIVE
             else -> Kind.CONTAINER
         }
     }
@@ -290,8 +287,7 @@ open class TreeMarkdown(protected val crop: Box) {
             .map { it.height }.sortedDescending()) {
             if (headHeights.none { sameSize(it, h) }) headHeights += h
         }
-        val nativePx = items.filterIsInstance<Item.Native>().map { it.px }.filter { it > 0 }.sorted()
-        val bodyPx = if (nativePx.isEmpty()) 0f else median(nativePx)
+        val bodyPx = median(items.filterIsInstance<Item.Native>().map { it.px }.filter { it > 0 })
         val out = ArrayList<Block>()
         var prevParent: TextNode? = null
         var prevBottom = 0
@@ -380,10 +376,6 @@ open class TreeMarkdown(protected val crop: Box) {
         )
         private val TABLE_ROLES = setOf("table", "grid")
         private val CELL_ROLES = setOf("cell", "columnheader", "rowheader", "gridcell")
-
-        fun median(sorted: List<Float>): Float =
-            if (sorted.size % 2 == 1) sorted[sorted.size / 2]
-            else (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
 
         /** [text] with native style ranges applied as runs. */
         fun styledRuns(text: String, styles: List<StyleRange>): List<Run> {

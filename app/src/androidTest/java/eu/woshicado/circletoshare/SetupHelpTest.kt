@@ -10,13 +10,12 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.nio.ByteBuffer
@@ -27,21 +26,9 @@ class SetupHelpTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    // Whether "How to open it" is folded is stored, and these tests tap its
-    // header: as found, afterwards.
-    private var triggersWere = true
-
-    @Before
-    fun remember() {
-        triggersWere = Prefs.isTriggersExpanded(instrumentation.targetContext)
-    }
-
-    @After
-    fun restore() {
-        Prefs.setTriggersExpanded(instrumentation.targetContext, triggersWere)
-        instrumentation.targetContext.getSharedPreferences("cts", android.content.Context.MODE_PRIVATE)
-            .edit().commit()
-    }
+    // (These tests tap "How to open it", whose folding is stored.)
+    @get:Rule
+    val kept = KeepPrefs()
 
     private class Helper(val button: Int, val title: Int, val clip: Int)
 
@@ -67,7 +54,7 @@ class SetupHelpTest {
                 if (it.findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE) {
                     it.findViewById<View>(R.id.triggers_header).performClick()
                     // (Stored by that tap: back to how it was.)
-                    Prefs.setTriggersExpanded(it, false)
+                    Prefs.setSectionExpanded(it, "triggers", false)
                 }
             }
             instrumentation.waitForIdleSync()
@@ -131,6 +118,14 @@ class SetupHelpTest {
                 clip = card.contentView.findViewById<ImageView>(R.id.help_clip).drawable
                     as AnimatedImageDrawable
             }
+            // (Back goes to the card once its window has the focus, which
+            // Android hands it a moment after it shows.)
+            for (attempt in 1..40) {
+                var focused = false
+                scenario.onActivity { focused = card.contentView.hasWindowFocus() }
+                if (focused) break
+                Thread.sleep(50)
+            }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             instrumentation.waitForIdleSync()
             scenario.onActivity {
@@ -169,12 +164,15 @@ class SetupHelpTest {
     @Test
     fun aCard_followsItsButton_andClosesWhenThatIsGone() {
         launchWithStepsShown().use { scenario ->
-            // The button on screen, with room around it to move in.
+            // The button on screen, near the top: room below it for the card
+            // (which closes where it has none, and at a large font size it is
+            // most of the screen),
+            // and a little above it to move up into.
             scenario.onActivity { activity ->
                 val button = activity.findViewById<View>(R.id.help_trigger_power)
                 val at = IntArray(2).also { button.getLocationOnScreen(it) }
                 activity.findViewById<android.widget.ScrollView>(R.id.root_scroll)
-                    .scrollBy(0, at[1] - activity.window.decorView.height / 3)
+                    .scrollBy(0, at[1] - activity.window.decorView.height / 10)
             }
             instrumentation.waitForIdleSync()
             scenario.click(R.id.help_trigger_power)
@@ -184,13 +182,19 @@ class SetupHelpTest {
             fun top(view: View) = IntArray(2).also { view.getLocationOnScreen(it) }[1]
             var buttonWas = 0
             var cardWas = 0
+            // Whether it fits beside the button at all: a card taller than the
+            // room (a large font size on a small screen) is laid over it and
+            // kept on the screen by Android, which follows less exactly.
+            var fits = true
             // The sections looked at again, as on every return to the
             // screen, and found as they are: no matter to the card.
             scenario.onActivity {
                 it.renderSetup(isAssistant = false, fallbackEnabled = false)
                 it.renderSetup(isAssistant = false, fallbackEnabled = false)
-                buttonWas = top(it.findViewById(R.id.help_trigger_power))
+                val button = it.findViewById<View>(R.id.help_trigger_power)
+                buttonWas = top(button)
                 cardWas = top(card!!.contentView)
+                fits = cardWas >= buttonWas + button.height || cardWas + card.contentView.height <= buttonWas
             }
             instrumentation.waitForIdleSync()
             scenario.onActivity { assertTrue(card!!.isShowing) }
@@ -198,18 +202,22 @@ class SetupHelpTest {
             // A line above goes, and the row moves up: the card with it, by
             // as much.
             scenario.onActivity { it.findViewById<View>(R.id.status_assistant).visibility = View.GONE }
+            // (Read once it has stopped moving: its window is placed anew a
+            // frame or so after the button, maybe more than once.)
             var moved = 0
-            repeat(20) {
+            var before = Int.MIN_VALUE
+            for (attempt in 1..40) {
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { moved = top(card!!.contentView) - cardWas }
-                if (moved != 0) return@repeat
+                if (moved != 0 && moved == before) break
+                before = moved
                 Thread.sleep(50)
             }
             scenario.onActivity {
                 assertTrue(card!!.isShowing)
                 val buttonMoved = top(it.findViewById(R.id.help_trigger_power)) - buttonWas
                 assertTrue("the button moved", buttonMoved < 0)
-                assertEquals(buttonMoved, moved)
+                if (fits) assertEquals(buttonMoved, moved) else assertTrue("the card moved up", moved < 0)
             }
 
             // Its own section folding takes the button away altogether.

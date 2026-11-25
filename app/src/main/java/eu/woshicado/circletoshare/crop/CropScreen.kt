@@ -2,10 +2,10 @@ package eu.woshicado.circletoshare.crop
 
 import android.annotation.SuppressLint
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
@@ -14,6 +14,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.text.LineBreaker
 import android.net.Uri
 import android.text.TextUtils
 import android.util.TypedValue
@@ -24,13 +25,15 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.view.doOnLayout
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.copyToClipboard
+import eu.woshicado.circletoshare.dp
 import eu.woshicado.circletoshare.qr.QrCode
 import eu.woshicado.circletoshare.qr.QrDetector
 import eu.woshicado.circletoshare.qr.qrOpenUri
 import eu.woshicado.circletoshare.share.Delivery
+import eu.woshicado.circletoshare.share.ShareHelper
 import eu.woshicado.circletoshare.text.PendingScreenText
 import eu.woshicado.circletoshare.text.TextCopy
 import kotlin.math.ceil
@@ -100,25 +103,25 @@ class CropScreen(context: Context) : FrameLayout(context) {
     // Closes the tool: in the top corner, out of the bar, so that every
     // button there does the same with a selection or without (on it, or on
     // the whole picture).
-    private val closeButton: TextView
-    private val saveButton: TextView
+    private val closeButton: PillButton
+    private val saveButton: PillButton
     // Copy, and beside it with a selection "Copy text": both icons only then,
     // in the room Copy's label took.
-    private val copyButton: TextView
-    private val copyTextButton: TextView
-    private val shareButton: TextView
+    private val copyButton: PillButton
+    private val copyTextButton: PillButton
+    private val shareButton: PillButton
     private val moreRow: ActionRow
-    private val moreAboveButton: TextView
-    private val moreSidewaysButton: TextView
-    private val moreBelowButton: TextView
+    private val moreAboveButton: PillButton
+    private val moreSidewaysButton: PillButton
+    private val moreBelowButton: PillButton
     private val sideRow: ActionRow
-    private val moreLeftButton: TextView
-    private val moreRightButton: TextView
+    private val moreLeftButton: PillButton
+    private val moreRightButton: PillButton
     private val areaPicker: AreaPickerView
     private val qrPanel: LinearLayout
     private val qrPanelText: TextView
     private val qrPanelError: TextView
-    private val qrOpenButton: TextView
+    private val qrOpenButton: PillButton
 
     // Saved crop offered by the tappable hint, or null when none is available
     // for the current capture.
@@ -142,9 +145,17 @@ class CropScreen(context: Context) : FrameLayout(context) {
     // the tool closes or shows another picture. And that copy while it runs.
     private var screenText: PendingScreenText? = null
     private var textCopy: TextCopy.Job? = null
+    // True from a Share or Copy until its image is written (see
+    // setDelivering): a second tap meanwhile does nothing.
+    private var delivering = false
     private val noticeGone = Runnable { noticeView.visibility = View.GONE }
 
     init {
+        // Right to left as the language it speaks is (see Language), not as
+        // the window it is in: the assistant's window follows the system's
+        // language, and the bubble's tool would be laid out the other way
+        // round from the assistant's it takes over from for "Capture more".
+        layoutDirection = resources.configuration.layoutDirection
         cropView.visibility = View.GONE
         cropView.onZoomChanged = { areaPicker.invalidate() }
         cropView.listener = object : CropOverlayView.Listener {
@@ -166,7 +177,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         )
 
-        hintView = TextView(context).apply {
+        hintView = HintView(context).apply {
             text = context.getString(R.string.crop_hint)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
@@ -174,7 +185,6 @@ class CropScreen(context: Context) : FrameLayout(context) {
             setPadding(dp(20), dp(10), dp(20), dp(10))
             compoundDrawablePadding = dp(ICON_PADDING_DP)
             compoundDrawableTintList = ColorStateList.valueOf(Color.WHITE)
-            gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
         }
         addView(
@@ -227,7 +237,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
             deliver(Delivery.COPY)
         }
         copyTextButton = pillButton("", R.drawable.ic_copy_text, filled = false) { copyText() }
-        setIconOnly(copyTextButton, R.string.action_copy_text)
+        copyTextButton.showIconOnly(context.getString(R.string.action_copy_text))
         copyTextButton.visibility = View.GONE
         shareButton = pillButton(
             context.getString(R.string.action_share), R.drawable.ic_share, filled = true
@@ -235,10 +245,12 @@ class CropScreen(context: Context) : FrameLayout(context) {
             deliver(Delivery.SHARE)
         }
         buttonBar.addAction(saveButton)
-        // (Its label, for the fit, also while it shows its icon alone.)
-        buttonBar.addAction(copyButton, context.getString(R.string.action_copy))
+        // (Its label, for the fit, also while it shows its icon alone. Short
+        // of room, the copy buttons are the first to show their icons alone:
+        // Save and Share keep their labels as long as they can.)
+        buttonBar.addAction(copyButton, context.getString(R.string.action_copy), givesWay = true)
         // (Not counted for the fit: with it, Copy loses its label.)
-        buttonBar.addAction(copyTextButton, measured = false)
+        buttonBar.addAction(copyTextButton, measured = false, givesWay = true)
         buttonBar.addAction(shareButton)
         // Save and Share alike, the copy buttons between them in the middle.
         buttonBar.matchWidths(saveButton, shareButton)
@@ -306,6 +318,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
         }
         sideRow = ActionRow(context).apply {
             visibility = View.GONE
+            // Left and right are the screen's: not swapped in a
+            // right-to-left language.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
             addAction(moreLeftButton)
             addAction(moreRightButton)
             matchWidths(moreLeftButton, moreRightButton)
@@ -453,6 +468,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
         text: PendingScreenText? = null
     ) {
         this.scrollshot = scrollshot
+        setDelivering(false)
         dropText()
         screenText = text
         // Apply the current crop-gesture preference (freeform circle vs. box).
@@ -503,7 +519,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
      * close ([Callbacks.onCancel]); with [onTap], a touch on the message
      * itself runs that instead. Undone by [setBitmap] and [clear].
      */
-    fun showMessage(message: CharSequence, onTap: (() -> Unit)? = null) {
+    fun showMessage(message: CharSequence, cancelable: Boolean = true, onTap: (() -> Unit)? = null) {
         // Nothing behind the message — not the black the picture stood on,
         // if there was one: the screen underneath shows through instead.
         background = null
@@ -522,7 +538,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
         hintView.setOnClickListener(onTap?.let { tap -> View.OnClickListener { tap() } })
         hintView.isClickable = onTap != null
         hintView.visibility = View.VISIBLE
-        setOnClickListener { callbacks?.onCancel() }
+        // Not [cancelable]: a touch is taken and does nothing — the message
+        // is to stay until it is replaced (Back still closes).
+        setOnClickListener { if (cancelable) callbacks?.onCancel() }
     }
 
     /** Drop the frozen screenshot and hide the UI — the reverse of [setBitmap].
@@ -530,6 +548,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
      *  the previous session's image. */
     fun clear() {
         sidewaysUnavailable = false
+        setDelivering(false)
         if (pickingArea) leavePicking()
         background = null
         currentBitmap = null
@@ -564,12 +583,15 @@ class CropScreen(context: Context) : FrameLayout(context) {
         moreAboveButton.visibility = if (More.ABOVE in choices) View.VISIBLE else View.INVISIBLE
         moreBelowButton.visibility = if (More.BELOW in choices) View.VISIBLE else View.INVISIBLE
         // The way sideways is open while the picture has not grown yet; its
-        // place is kept after, like the other's (see above).
-        moreSidewaysButton.visibility = when {
-            onCaptureSideways == null || sidewaysUnavailable -> View.GONE
-            More.ABOVE in choices && More.BELOW in choices -> View.VISIBLE
-            else -> View.INVISIBLE
-        }
+        // place is kept after, like the other's (see above) — also in the
+        // tool that shows the grown picture, whose host offers no way
+        // sideways any more — and where nothing scrolls sideways.
+        moreSidewaysButton.visibility =
+            if (onCaptureSideways != null && !sidewaysUnavailable && More.ABOVE in choices && More.BELOW in choices) {
+                View.VISIBLE
+            } else {
+                View.INVISIBLE
+            }
         moreLeftButton.visibility = if (More.LEFT in choices) View.VISIBLE else View.INVISIBLE
         moreRightButton.visibility = if (More.RIGHT in choices) View.VISIBLE else View.INVISIBLE
         val shown = onCaptureMore != null && choices.isNotEmpty() &&
@@ -776,9 +798,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
     }
 
     private fun copyQr(text: String) {
-        val clipboard = context.getSystemService(ClipboardManager::class.java)
-        clipboard.setPrimaryClip(ClipData.newPlainText("qr", text))
-        Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
+        copyToClipboard(context, ClipData.newPlainText("qr", text), R.string.copied)
         callbacks?.onCancel()
     }
 
@@ -814,13 +834,49 @@ class CropScreen(context: Context) : FrameLayout(context) {
         // text then), OCR reading what the tree can't; unless switched off.
         val withText = eu.woshicado.circletoshare.Prefs.isCopyTextEnabled(context)
         if (withText) TextCopy.prepare(context)
-        if (withText) setIconOnly(copyButton, R.string.action_copy_image)
-        else setLabeled(copyButton, R.string.action_copy)
+        if (withText) copyButton.showIconOnly(context.getString(R.string.action_copy_image))
+        else copyButton.showLabel(context.getString(R.string.action_copy))
         copyTextButton.visibility = if (withText) View.VISIBLE else View.GONE
-        copyTextButton.isEnabled = textCopy == null
+        copyTextButton.isEnabled = textCopy == null && !delivering
+    }
+
+    /** While [on], what was asked for is being written (see
+     *  ShareHelper.deliver): the buttons — the "More" ones too: a step would
+     *  take the picture away — are dimmed and disabled, and the gestures
+     *  that share or copy do nothing. Closing still works. A Copy text
+     *  still reading is called off: done, it would close the tool, and the
+     *  share or copy with it. */
+    fun setDelivering(on: Boolean) {
+        delivering = on
+        if (on) cancelTextCopy()
+        for (row in listOf(buttonBar, moreRow, sideRow)) {
+            row.alpha = if (on) 0.5f else 1f
+            for (i in 0 until row.childCount) row.getChildAt(i).isEnabled = !on
+        }
+    }
+
+    /**
+     * A Share or a Copy of [bounds] of [bitmap] (see ShareHelper.deliver):
+     * the tool waits for the image, then hands it over from its window (see
+     * ShareHelper.handOver), unless it was closed meanwhile ([isOpen] false)
+     * and it is no longer wanted. [done] gets null once it is handed over,
+     * else what to say of why not.
+     */
+    fun shareOrCopy(
+        bitmap: Bitmap, bounds: Rect, action: Delivery, app: String?,
+        isOpen: () -> Boolean, done: (failure: Int?) -> Unit,
+    ) {
+        setDelivering(true)
+        ShareHelper.deliver(context, bitmap, bounds, action, app) { result ->
+            if (!isOpen()) return@deliver
+            // (A share sheet or a clipboard that throws is said as any failure.)
+            result.mapCatching { ShareHelper.handOver(context, action, it) }
+                .fold({ done(null) }, { done(ShareHelper.failureMessage(it)) })
+        }
     }
 
     private fun deliver(action: Delivery) {
+        if (delivering) return
         val rect = cropView.getCropRect()
         rememberCrop(rect)
         callbacks?.onDeliver(action, rect)
@@ -847,55 +903,55 @@ class CropScreen(context: Context) : FrameLayout(context) {
         if (textCopy != null) return
         copyTextButton.isEnabled = false
         copyTextButton.alpha = 0.5f
-        textCopy = TextCopy.start(context, bitmap, rect, screenText) { blocks ->
+        // (A long page can take seconds to read: said here, in the tool,
+        // where a toast would be dropped or drawn beneath it.)
+        val slow = { say(R.string.text_reading) }
+        textCopy = TextCopy.start(context, bitmap, rect, screenText, slow) { blocks ->
             textCopy = null
             copyTextButton.isEnabled = true
             copyTextButton.alpha = 1f
             if (blocks.isEmpty()) {
-                sayNoText()
+                // (There was none, in the selection or on the whole screen:
+                // the tool stays open.)
+                say(R.string.text_none, NO_TEXT_MS)
                 return@start
             }
             rememberCrop(selection)
-            TextCopy.toClipboard(context, blocks, eu.woshicado.circletoshare.Prefs.isCopyTextMarkdown(context))
-            Toast.makeText(context, R.string.text_copied, Toast.LENGTH_SHORT).show()
+            val markdown = eu.woshicado.circletoshare.Prefs.isCopyTextMarkdown(context)
+            copyToClipboard(context, TextCopy.clip(blocks, markdown), R.string.text_copied)
             callbacks?.onCancel()
         }
     }
 
-    /** That there was no text (in the selection, or on the whole screen),
-     *  above the buttons for a while: the tool stays open. */
-    private fun sayNoText() {
+    /** [message] above the buttons, the tool staying open: for [forMs], or
+     *  until [hush] (or another message) with none. */
+    private fun say(message: Int, forMs: Long? = null) {
         removeCallbacks(noticeGone)
-        noticeView.setText(R.string.text_none)
+        noticeView.setText(message)
         noticeView.visibility = View.VISIBLE
-        postDelayed(noticeGone, NO_TEXT_MS)
+        forMs?.let { postDelayed(noticeGone, it) }
+    }
+
+    private fun hush() {
+        removeCallbacks(noticeGone)
+        noticeView.visibility = View.GONE
     }
 
     private fun dropText() {
-        removeCallbacks(noticeGone)
-        noticeView.visibility = View.GONE
-        textCopy?.cancel()
-        textCopy = null
+        hush()
+        cancelTextCopy()
         screenText?.cancel()
         screenText = null
-        copyTextButton.isEnabled = true
+    }
+
+    /** Call off a Copy text still reading, if there is one. */
+    private fun cancelTextCopy() {
+        // ("Reading…", if it was said, with it.)
+        if (textCopy != null) hush()
+        textCopy?.cancel()
+        textCopy = null
+        copyTextButton.isEnabled = !delivering
         copyTextButton.alpha = 1f
-    }
-
-    /** [button] as an icon alone, [description] saying what it does to
-     *  screen readers and on a long press. */
-    private fun setIconOnly(button: TextView, description: Int) {
-        button.text = ""
-        button.contentDescription = context.getString(description)
-        button.tooltipText = context.getString(description)
-        (button as PillButton).setIconAlone(true)
-    }
-
-    private fun setLabeled(button: TextView, label: Int) {
-        button.text = context.getString(label)
-        button.contentDescription = null
-        button.tooltipText = null
-        (button as PillButton).setIconAlone(false)
     }
 
     /** [res] at the size the pills' icons share, ready for a compound
@@ -904,9 +960,8 @@ class CropScreen(context: Context) : FrameLayout(context) {
         setBounds(0, 0, dp(ICON_SIZE_DP), dp(ICON_SIZE_DP))
     }
 
-    private fun pillButton(label: String, iconRes: Int, filled: Boolean, onClick: () -> Unit): TextView =
+    private fun pillButton(label: String, iconRes: Int, filled: Boolean, onClick: () -> Unit): PillButton =
         PillButton(context).apply {
-            text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             val content = if (filled) Color.BLACK else Color.WHITE
             setTextColor(content)
@@ -926,7 +981,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
             )
             gravity = Gravity.CENTER
             minHeight = dp(48)
-            setIconAlone(false)
+            showLabel(label)
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
@@ -942,9 +997,6 @@ class CropScreen(context: Context) : FrameLayout(context) {
             if (outlined) setStroke(dp(1), Color.argb(90, 255, 255, 255))
         }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
     private companion object {
         const val BAR_BOTTOM_MARGIN_DP = 48
         const val HINT_TOP_DP = 64
@@ -958,9 +1010,38 @@ class CropScreen(context: Context) : FrameLayout(context) {
 
 // Between a pill's icon and its label.
 private const val ICON_PADDING_DP = 8
+// A pill's padding beside a label: less on the icon's side, as Material's.
+private const val LABEL_START_DP = 18
+private const val LABEL_END_DP = 24
 // Each side of an icon-only pill: two of them take about the width of one
 // with a short label.
 private const val ICON_ONLY_PADDING_DP = 14
+
+/**
+ * The pill at the top (a hint, a notice): where its text takes more than one
+ * line, the lines are centered and about as long as each other, and the pill
+ * as wide as the longest of them. A plain TextView stays as wide as the room
+ * it was offered, leaving an empty strip beside its shorter lines.
+ */
+@SuppressLint("AppCompatCustomView")
+private class HintView(context: Context) : TextView(context) {
+
+    init {
+        gravity = Gravity.CENTER
+        breakStrategy = LineBreaker.BREAK_STRATEGY_BALANCED
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val lines = layout ?: return
+        if (lines.lineCount < 2) return
+        val longest = (0 until lines.lineCount).maxOf { lines.getLineWidth(it) }
+        val width = ceil(longest).toInt() + compoundPaddingLeft + compoundPaddingRight
+        if (width < measuredWidth) {
+            super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightMeasureSpec)
+        }
+    }
+}
 
 /**
  * A pill whose leading icon stays beside its label, the two centered as one.
@@ -976,7 +1057,21 @@ private const val ICON_ONLY_PADDING_DP = 14
 private class PillButton(context: Context) : TextView(context) {
 
     // What it says, also while it shows its icon alone (see compact).
-    private var label: CharSequence = ""
+    var label: CharSequence = ""
+        private set
+
+    // What a screen reader says of it where it has no label (see showIconOnly).
+    private var description: CharSequence? = null
+
+    // (TextView's constructor sets a text before this class's fields are.)
+    private var ready = false
+
+    // Padded for its icon alone just now (see setIconAlone).
+    private var iconAlone = false
+
+    init {
+        ready = true
+    }
 
     /**
      * Its icon alone, its label said to screen readers and on a long press
@@ -993,23 +1088,65 @@ private class PillButton(context: Context) : TextView(context) {
             if (label.isEmpty()) return
             val shown = if (value) "" else label
             if (text.toString() != shown.toString()) super.setText(shown, BufferType.NORMAL)
-            contentDescription = if (value) label else null
-            tooltipText = if (value) label else null
-            setIconAlone(value)
+            describe()
         }
 
     override fun setText(text: CharSequence?, type: BufferType?) {
         label = text ?: ""
         super.setText(if (compact && label.isNotEmpty()) "" else text, type)
+        if (ready) describe()
+    }
+
+    /** [label] beside its icon, where the row has room for it. */
+    fun showLabel(label: CharSequence) {
+        description = null
+        text = label
+    }
+
+    /** Its icon alone, wherever it is, [description] said to screen readers
+     *  and on a long press. */
+    fun showIconOnly(description: CharSequence) {
+        this.description = description
+        text = ""
+    }
+
+    /** The padding beside a label (and the icon with it), however it is
+     *  padded now: what a row judges the room for its label by. From the
+     *  padding as it is, so that the icon counts as it does there (not at
+     *  all until the drawable is placed, which a view outside a window may
+     *  never be). */
+    fun labeledPadding(): Int = paddedAs(iconAlone = false)
+
+    /** Its width with its icon alone, however it is padded now (as above). */
+    fun iconAloneWidth(): Int = paddedAs(iconAlone = true)
+
+    private fun paddedAs(iconAlone: Boolean): Int {
+        val now = compoundPaddingLeft + compoundPaddingRight
+        if (iconAlone == this.iconAlone) return now
+        // (The icon counted in the padding beside a label as it is in the
+        // padding now, if at all.)
+        val besideLabel = if (now > paddingLeft + paddingRight) dp(ICON_PADDING_DP) else 0
+        val labeled = dp(LABEL_START_DP) + dp(LABEL_END_DP) + besideLabel
+        val alone = 2 * dp(ICON_ONLY_PADDING_DP)
+        return if (iconAlone) now - labeled + alone else now - alone + labeled
+    }
+
+    // What is said of it and how it is padded, from its label and whether
+    // the row has made it compact: one rule, whichever changed.
+    private fun describe() {
+        val said = if (label.isEmpty()) description else if (compact) label else null
+        contentDescription = said
+        tooltipText = said
+        setIconAlone(compact || label.isEmpty())
     }
 
     /** Padded for the icon alone, or for a label beside it (less on the
      *  icon's side, as Material's buttons with an icon). */
-    fun setIconAlone(iconAlone: Boolean) {
-        fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun setIconAlone(iconAlone: Boolean) {
+        this.iconAlone = iconAlone
         compoundDrawablePadding = if (iconAlone) 0 else dp(ICON_PADDING_DP)
-        val start = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(18)
-        val end = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(24)
+        val start = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(LABEL_START_DP)
+        val end = if (iconAlone) dp(ICON_ONLY_PADDING_DP) else dp(LABEL_END_DP)
         // (Padding as it is already is left alone: setting it lays out again.)
         if (paddingStart != start || paddingEnd != end || paddingTop != dp(13)) {
             setPaddingRelative(start, dp(13), end, dp(13))
@@ -1122,38 +1259,53 @@ private class AreaPickerView(context: Context) : View(context) {
         }
         return pressed != null || event.actionMasked == MotionEvent.ACTION_UP
     }
-
-    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
 /**
  * A row of pill buttons, main action last. Where the buttons don't fit side
  * by side with their labels on one line — a narrow screen at a large font or
- * display size — they show their icons alone (see PillButton.compact); where
- * even those don't fit, it becomes a stack of equally wide buttons with their
- * labels, main action first, rather than squeeze the last one into a sliver
- * that breaks its label a letter at a time.
+ * display size, a long translation — those that give way first (see
+ * addAction) show their icons alone and the rest keep their labels; where
+ * that doesn't fit either, all show their icons alone (see
+ * PillButton.compact); where even those don't fit, it becomes a stack of
+ * equally wide buttons with their labels, main action first, rather than
+ * squeeze the last one into a sliver that breaks its label a letter at a
+ * time.
  */
 private class ActionRow(context: Context) : LinearLayout(context) {
 
     // Every label a button may come to show, to judge the fit by the widest:
     // side by side or stacked must not flip when a label changes.
-    private val labels = HashMap<TextView, List<String>>()
+    private val labels = HashMap<PillButton, List<String>>()
     // Buttons left out of judging the fit (see addAction).
-    private val unmeasured = HashSet<TextView>()
+    private val unmeasured = HashSet<PillButton>()
+    // Buttons that show their icons alone before the others do (see addAction).
+    private val givingWay = HashSet<PillButton>()
     // Buttons as wide as the widest of them (see matchWidths).
-    private val matched = HashSet<TextView>()
+    private val matched = HashSet<PillButton>()
     private var stacked = false
 
     init {
         orientation = HORIZONTAL
+        // LEFT, not the default START: onMeasure widens the row after
+        // LinearLayout has measured it, and a row that starts on the right
+        // (right-to-left) would place its buttons that much too far right.
+        // (Their order still follows the layout direction.)
+        gravity = Gravity.LEFT
+        // Not lined up by their text: a pill showing its icon alone has none
+        // to go by, and a script with taller lines than its own (Arabic)
+        // would push the labeled pills down past the row's bottom edge.
+        isBaselineAligned = false
     }
 
     /** [measured] false: [button] is left out of judging the fit — it only
-     *  ever shows while another gives up its label for the room. */
-    fun addAction(button: TextView, vararg labels: String, measured: Boolean = true) {
+     *  ever shows while another gives up its label for the room. [givesWay]:
+     *  where not all labels fit, it shows its icon alone first, for the
+     *  others to keep theirs. */
+    fun addAction(button: PillButton, vararg labels: String, measured: Boolean = true, givesWay: Boolean = false) {
         this.labels[button] = labels.toList()
         if (!measured) unmeasured += button
+        if (givesWay) givingWay += button
         addView(button, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         applyItemLayout()
     }
@@ -1164,19 +1316,23 @@ private class ActionRow(context: Context) : LinearLayout(context) {
      * middle of the row — and of the screen — whatever their labels.
      * (Stacked, every button is as wide as the widest anyway.)
      */
-    fun matchWidths(vararg buttons: TextView) {
+    fun matchWidths(vararg buttons: PillButton) {
         matched += buttons
         requestLayout()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED) {
-            // With their labels if they fit; else their icons alone, if those
-            // do; else stacked, with their labels.
+            // With their labels if they fit; else those that give way their
+            // icons alone, the rest their labels, if that fits; else all their
+            // icons alone, if those do; else stacked, with their labels.
             val room = MeasureSpec.getSize(widthMeasureSpec)
             val labels = widthSideBySide() <= room
-            val icons = labels || widthIconsAlone() <= room
-            for (i in 0 until childCount) (getChildAt(i) as? PillButton)?.compact = !labels && icons
+            val some = !labels && givingWay.isNotEmpty() && widthSideBySide(givingWay) <= room
+            val icons = labels || some || widthIconsAlone() <= room
+            for (button in buttons()) {
+                button.compact = if (some) button in givingWay else !labels && icons
+            }
             setStacked(!icons)
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
@@ -1201,19 +1357,27 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     }
 
     /** The width the row needs with every label on a single line (the
-     *  matched buttons as wide as the widest of them). */
-    private fun widthSideBySide(): Int {
+     *  matched buttons as wide as the widest of them) — but those of
+     *  [iconsAlone], which show their icons alone. */
+    private fun widthSideBySide(iconsAlone: Set<PillButton> = emptySet()): Int {
         var width = paddingLeft + paddingRight
-        // (Compound padding: the padding plus the icon beside the label.)
-        fun needed(button: TextView): Int {
-            val widest = (labels[button].orEmpty() + button.text.toString())
+        fun needed(button: PillButton): Int {
+            // (Its label, not its text: compact, a pill shows none, and the
+            // row would take that for room and flip back and forth.)
+            val widest = (labels[button].orEmpty() + button.label.toString())
                 .maxOf { button.paint.measureText(it) }
-            return button.compoundPaddingLeft + button.compoundPaddingRight + ceil(widest).toInt()
+            // (Padded as with a label, not as it is: compact, a pill is padded
+            // for its icon alone, and that too would be taken for room.)
+            return button.labeledPadding() + ceil(widest).toInt()
         }
         val matchedWidth = matched.filter { it.visibility != View.GONE && it !in unmeasured }
             .maxOfOrNull { needed(it) } ?: 0
-        for (i in 0 until childCount) {
-            val button = getChildAt(i) as TextView
+        for (button in buttons()) {
+            if (button in iconsAlone) {
+                // (Those showing alone too, beside a button giving way.)
+                if (button.visibility != View.GONE) width += button.iconAloneWidth() + 2 * dp(ITEM_MARGIN_DP)
+                continue
+            }
             if (button in unmeasured) continue
             val own = if (button in matched && button.visibility != View.GONE) matchedWidth else needed(button)
             width += own + 2 * dp(ITEM_MARGIN_DP)
@@ -1224,14 +1388,15 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     /** The width the row needs with every button showing its icon alone. */
     private fun widthIconsAlone(): Int {
         var width = paddingLeft + paddingRight
-        for (i in 0 until childCount) {
-            val button = getChildAt(i) as TextView
+        for (button in buttons()) {
             if (button.visibility == View.GONE) continue
-            val icon = button.compoundDrawablesRelative[0]?.bounds?.width() ?: 0
-            width += icon + 2 * dp(ICON_ONLY_PADDING_DP) + 2 * dp(ITEM_MARGIN_DP)
+            width += button.iconAloneWidth() + 2 * dp(ITEM_MARGIN_DP)
         }
         return width
     }
+
+    // (Every child is one: see addAction.)
+    private fun buttons() = (0 until childCount).map { getChildAt(it) as PillButton }
 
     private fun setStacked(stack: Boolean) {
         if (stacked == stack) return
@@ -1245,8 +1410,11 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     private fun applyItemLayout() {
         for (i in 0 until childCount) {
             val params = getChildAt(i).layoutParams as LayoutParams
-            // Stacked, each button is as wide as the widest of them.
+            // Stacked, each button is as wide as the widest of them; side by
+            // side, as tall as the tallest (a label in a script with taller
+            // lines makes its pill taller than one with its icon alone).
             params.width = if (stacked) LayoutParams.MATCH_PARENT else LayoutParams.WRAP_CONTENT
+            params.height = if (stacked) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
             params.marginStart = dp(ITEM_MARGIN_DP)
             params.marginEnd = dp(ITEM_MARGIN_DP)
             params.topMargin = if (stacked && i > 0) dp(STACK_GAP_DP) else 0
@@ -1254,10 +1422,9 @@ private class ActionRow(context: Context) : LinearLayout(context) {
         requestLayout()
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
     private companion object {
         const val ITEM_MARGIN_DP = 6
         const val STACK_GAP_DP = 8
     }
 }
+
