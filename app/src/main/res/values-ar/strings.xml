@@ -151,7 +151,7 @@
     <string name="text_copied">تم نسخ النص</string>
     <string name="text_none">لم يتم العثور على نص</string>
     <string name="text_reading">جارٍ مواصلة قراءة نص الشاشة…</string>
-    <string name="saved">حُفظ في لقطات الشاشة</string>
+    <string name="saved">حُفظ في %1$s</string>
     <string name="action_view">عرض</string>
 
     <string name="error_no_capture">تعذّر التقاط الشاشة. فعّل الطريقة البديلة في تطبيق «Circle to Share»، أو فعّل «استخدام بيانات الشاشة» ضمن إعدادات المساعد.</string>
