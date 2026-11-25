@@ -7,10 +7,9 @@ import android.os.Build
 import android.os.LocaleList
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.text.Collator
@@ -23,17 +22,8 @@ import java.text.Collator
 class LanguageTest {
 
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private var pickedWas: String? = null
-
-    @Before
-    fun remember() {
-        pickedWas = Prefs.getLanguage(context)
-    }
-
-    @After
-    fun restore() {
-        Prefs.setLanguage(context, pickedWas)
-    }
+    @get:Rule
+    val kept = KeepPrefs()
 
     @Test
     fun theSystemsLanguageComesFirst_thenEnglish_thenTheTranslationsByName() {

@@ -6,6 +6,7 @@ import android.graphics.Rect
 import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import eu.woshicado.circletoshare.KeepPrefs
 import eu.woshicado.circletoshare.Prefs
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -15,6 +16,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -27,22 +29,19 @@ class DeliverTest {
     private val context: Context = instrumentation.targetContext
     private val bitmap = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
 
-    private var dirWas: String? = null
-    private var perAppWas = false
     private var saved: Delivered? = null
 
+    @get:Rule
+    val kept = KeepPrefs()
+
     @Before
-    fun remember() {
-        dirWas = Prefs.getSaveDir(context)
-        perAppWas = Prefs.isSavePerApp(context)
+    fun setUp() {
         Prefs.setSaveDir(context, null)
         Prefs.setSavePerApp(context, false)
     }
 
     @After
-    fun restore() {
-        Prefs.setSaveDir(context, dirWas)
-        Prefs.setSavePerApp(context, perAppWas)
+    fun tearDown() {
         saved?.let { runCatching { context.contentResolver.delete(it.uri, null, null) } }
     }
 

@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.widget.Toast
 import eu.woshicado.circletoshare.Language
 import eu.woshicado.circletoshare.MainActivity
-import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService.Refusal
 
@@ -32,14 +31,14 @@ abstract class CaptureStarterActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val service = ScreenshotAccessibilityService.instance
+        val why = ScreenshotAccessibilityService.whyNotReady(this)
         when {
-            service == null -> openApp(ScreenshotAccessibilityService.whyNotRunning(this))
-            !Prefs.hasAccessibilityConsent(this) -> openApp(R.string.error_needs_consent)
-            else -> when (request(service)) {
-                // (Busy: a tool is already up, or on its way.)
-                Refusal.NONE, Refusal.BUSY -> Unit
+            why != null -> openApp(why)
+            service != null -> when (request(service)) {
+                // (Busy: a tool is already up, or on its way. Not agreed to:
+                // said above, see whyNotReady.)
+                Refusal.NONE, Refusal.BUSY, Refusal.NO_CONSENT -> Unit
                 Refusal.LOCKED -> onLocked()
-                Refusal.NO_CONSENT -> openApp(R.string.error_needs_consent)
             }
         }
         // (Theme.NoDisplay: finished before it resumes, or it throws.)

@@ -7,7 +7,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.Bitmap
@@ -51,11 +50,11 @@ import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
+import eu.woshicado.circletoshare.dp
 import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
 import eu.woshicado.circletoshare.text.PendingScreenText
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * Two jobs:
@@ -131,32 +130,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
          * failure least of all.
          */
         fun reportSave(context: Context, message: String, openOnTap: Uri?) {
-            val service = instance
-            if (service == null) {
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                return
-            }
+            val service = instance ?: return notify(context, message, openOnTap)
             service.ui.post {
                 service.saveNotices.addLast(message to openOnTap)
                 service.showSaveNotice()
             }
         }
 
-        private const val PREFS = "cts"
-        private const val KEY_BUBBLE = "bubble_enabled"
-        private const val KEY_BUBBLE_X = "bubble_x"
-        private const val KEY_BUBBLE_Y = "bubble_y"
-        private const val KEY_BUBBLE_OPACITY = "bubble_opacity"
-        // Set once the saved spot is known to be measured from the display's
-        // corner — see migrateBubbleOrigin.
-        private const val KEY_BUBBLE_ORIGIN_DISPLAY = "bubble_origin_display"
+        // The bubble's spot, before it has one of its own (see Prefs.getBubblePosition).
         private const val UNSET = Int.MIN_VALUE
-
-        // Bubble opacity in percent. The floor keeps a bubble that has to be
-        // found again (to drag or tap it) from fading out of sight entirely.
-        const val BUBBLE_OPACITY_MIN = 20
-        const val BUBBLE_OPACITY_MAX = 100
-        const val BUBBLE_OPACITY_STEP = 5
         private const val NO_CAPTURE = -1
 
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
@@ -258,41 +240,26 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             if (instance == null && isListedAsEnabled(context)) R.string.error_accessibility_stale
             else R.string.error_needs_accessibility
 
-        fun isBubbleEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getBoolean(KEY_BUBBLE, false)
+        /** Why the service can't be asked for a capture now, as what to tell
+         *  the user — it isn't running, or what it reads isn't agreed to:
+         *  either is put right on the app's own screen. Null when it can. */
+        fun whyNotReady(context: Context): Int? = when {
+            instance == null -> whyNotRunning(context)
+            !Prefs.hasAccessibilityConsent(context) -> R.string.error_needs_consent
+            else -> null
+        }
 
+        /** The bubble on or off (see Prefs.setBubbleEnabled), and the
+         *  running service's bubble with it. */
         fun setBubblePref(context: Context, enabled: Boolean) {
-            val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_BUBBLE, enabled)
-            if (enabled) {
-                // Re-enabling from the app resets the position, so a bubble that
-                // was dragged out of reach can always be recovered.
-                editor.remove(KEY_BUBBLE_X).remove(KEY_BUBBLE_Y)
-                instance?.resetBubblePosition()
-            }
-            editor.apply()
+            Prefs.setBubbleEnabled(context, enabled)
+            if (enabled) instance?.resetBubblePosition()
             instance?.applyBubbleState()
         }
 
-        /** Always a value the settings slider accepts: in range and on a
-         *  step (the slider throws on anything else). */
-        fun getBubbleOpacity(context: Context): Int = snapOpacity(
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getInt(KEY_BUBBLE_OPACITY, BUBBLE_OPACITY_MAX)
-        )
-
+        /** The bubble's opacity kept, and the running service's bubble so. */
         fun setBubbleOpacity(context: Context, percent: Int) {
-            val snapped = snapOpacity(percent)
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putInt(KEY_BUBBLE_OPACITY, snapped).apply()
-            instance?.applySavedBubbleOpacity(snapped)
-        }
-
-        private fun snapOpacity(percent: Int): Int {
-            val steps = ((percent - BUBBLE_OPACITY_MIN).toFloat() / BUBBLE_OPACITY_STEP).roundToInt()
-            return (BUBBLE_OPACITY_MIN + steps * BUBBLE_OPACITY_STEP)
-                .coerceIn(BUBBLE_OPACITY_MIN, BUBBLE_OPACITY_MAX)
+            instance?.applySavedBubbleOpacity(Prefs.setBubbleOpacity(context, percent))
         }
     }
 
@@ -485,10 +452,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         windowManager = getSystemService(WindowManager::class.java)
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        bubbleX = prefs.getInt(KEY_BUBBLE_X, UNSET)
-        bubbleY = prefs.getInt(KEY_BUBBLE_Y, UNSET)
-        migrateBubbleOrigin(prefs)
+        val position = Prefs.getBubblePosition(this)
+        bubbleX = position?.x ?: UNSET
+        bubbleY = position?.y ?: UNSET
+        migrateBubbleOrigin()
         // The service is enabled while the user is unlocked and using the phone.
         val keyguard = getSystemService(KeyguardManager::class.java)
         userPresent = isScreenInteractive() && !keyguard.isKeyguardLocked
@@ -534,16 +501,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * on a display without one, whatever the system bars — except that a
      * cutout at the top counted as the whole status bar it sits in.
      */
-    private fun migrateBubbleOrigin(prefs: SharedPreferences) {
-        if (prefs.getBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, false)) return
-        val editor = prefs.edit().putBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, true)
+    private fun migrateBubbleOrigin() {
+        if (Prefs.isBubbleOriginDisplay(this)) return
         if (bubbleX != UNSET && bubbleY != UNSET) {
             val cutout = cutoutKeepOut(displayMetrics().windowInsets)
             bubbleX += cutout.left
             bubbleY += cutout.top
-            editor.putInt(KEY_BUBBLE_X, bubbleX).putInt(KEY_BUBBLE_Y, bubbleY)
+            persistBubblePosition()
         }
-        editor.apply()
+        Prefs.setBubbleOriginDisplay(this)
     }
 
     /**
@@ -683,7 +649,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // --- Snap-to-content bounds ----------------------------------------------
 
     /** The application windows on the default display, topmost first:
-     *  none of this app's overlays, the assistant's window or the system's. */
+     *  none of this app's overlays (accessibility overlays), the assistant's
+     *  window, the system bars or the keyboard. What every walk over what is
+     *  on screen (snap bounds, screen text, scrollshots) looks at. */
     fun appWindows(): List<AccessibilityWindowInfo> =
         runCatching { windows }.getOrNull().orEmpty().filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
@@ -735,7 +703,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (!consented() || !Prefs.hasTextConsent(this) || !Prefs.isCopyTextEnabled(this)) return null
         val bounds = displayMetrics().bounds
         return runCatching {
-            ScreenTextReader.start(windows, Rect(0, 0, bounds.width(), bounds.height()), packageName)
+            ScreenTextReader.start(appWindows(), Rect(0, 0, bounds.width(), bounds.height()), packageName)
         }.getOrNull()
     }
 
@@ -757,26 +725,18 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         val rects = HashSet<Rect>()
         var budget = SNAP_MAX_NODES
         val started = SystemClock.uptimeMillis()
-        var appWindows = 0
-        for (window in windows) {
-            // Application windows only: skips our own bubble/crop overlay
-            // (TYPE_ACCESSIBILITY_OVERLAY), the assist-session window (system
-            // layer), status/nav bars, and the IME — and naturally includes
-            // every app window in split-screen.
-            if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
-            if (window.displayId != Display.DEFAULT_DISPLAY) continue
-            // (No filter on our own package: this app's main screen is an
-            // application window like any other, and "Test capture" there is
-            // where snapping gets tried first. None of our overlays is on
-            // screen when this runs, and none is an application window.)
+        // Every app window, in split screen too; none of the overlays, bars
+        // or the keyboard. (Not left out: this app's own main screen, where
+        // "Test capture" is where snapping gets tried first.)
+        val apps = appWindows()
+        for (window in apps) {
             val root = window.root ?: continue
-            appWindows++
             budget = walkSnapNodes(root, 0, budget, display, minSide, rects)
             if (budget <= 0) break
         }
         android.util.Log.d(
             "CircleToShare",
-            "snap collect: ${windows.size} windows ($appWindows app), " +
+            "snap collect: ${apps.size} app windows, " +
                 "${rects.size} rects, ${SNAP_MAX_NODES - budget} nodes visited, " +
                 "${SystemClock.uptimeMillis() - started} ms, " +
                 "screen ${display.width()}x${display.height()}"
@@ -812,27 +772,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             }
         }
         if (depth >= SNAP_MAX_DEPTH) return budget
-        val count = node.childCount
-        // A long page scrolled far down — a web page lists all of itself —
-        // would spend the whole budget on what lies above the screen and
-        // never get to what is on it. Where there are many children and
-        // they run down the page in order, start at the first that reaches
-        // the screen and stop after the last that does.
-        val sorted = count >= NodeWalk.SEARCH_MIN && NodeWalk.runsDownThePage(node, count)
-        var i = if (sorted) NodeWalk.firstChildReachingScreen(node, count, display) else 0
-        var seenOnScreen = false
-        val bounds = Rect()
-        while (i < count) {
-            if (budget <= 0) return 0
-            val child = node.getChild(i++) ?: continue
-            if (sorted) {
-                child.getBoundsInScreen(bounds)
-                if (!bounds.isEmpty && bounds.top >= display.bottom) {
-                    if (seenOnScreen) break
-                } else if (Rect.intersects(bounds, display)) {
-                    seenOnScreen = true
-                }
-            }
+        // (Not what lies above or below the screen on a long page: see NodeWalk.)
+        NodeWalk.childrenOnScreen(node, display, more = { budget > 0 }) { child ->
             budget = walkSnapNodes(child, depth + 1, budget, display, minSide, out)
         }
         return budget
@@ -890,7 +831,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      *  user is present, and the screen is usable — hidden on lock screen and
      *  AOD even when the device is trust-unlocked (Extend Unlock). */
     private fun shouldShowBubble(): Boolean =
-        isBubbleEnabled(this) && consented() && !capturing && overlayView == null &&
+        Prefs.isBubbleEnabled(this) && consented() && !capturing && overlayView == null &&
             userPresent && isScreenUsable()
 
     private fun refreshBubble() {
@@ -923,7 +864,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 setColor(Color.argb(235, 52, 43, 109))
                 setStroke(dp(1), Color.argb(90, 255, 255, 255))
             }
-            alpha = (previewOpacity ?: getBubbleOpacity(this@ScreenshotAccessibilityService)) / 100f
+            alpha = (previewOpacity ?: Prefs.getBubbleOpacity(this@ScreenshotAccessibilityService)) / 100f
         }
         val params = WindowManager.LayoutParams(
             size, size,
@@ -1235,10 +1176,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     private fun persistBubblePosition() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putInt(KEY_BUBBLE_X, bubbleX)
-            .putInt(KEY_BUBBLE_Y, bubbleY)
-            .apply()
+        Prefs.setBubblePosition(this, bubbleX, bubbleY)
     }
 
     /**
@@ -1636,15 +1574,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     }
                     return
                 }
-                // A share or a copy is handed over from the tool's window
-                // (see ShareHelper.handOver): it waits for the image.
-                screen.setDelivering(true)
-                ShareHelper.deliver(service, bitmap, bounds, action, info.app) { result ->
-                    if (overlayView !== screen) return@deliver // closed meanwhile: no longer wanted
-                    // (They show for themselves; see AssistSession.deliver.)
-                    result
-                        .mapCatching { ShareHelper.handOver(service, action, it) }
-                        .onFailure { showNotice(getString(ShareHelper.failureMessage(it))) }
+                // A share or a copy shows for itself (see AssistSession.deliver).
+                screen.shareOrCopy(bitmap, bounds, action, info.app, isOpen = { overlayView === screen }) { failure ->
+                    failure?.let { showNotice(getString(it)) }
                     dismissOverlay()
                 }
             }
@@ -2018,7 +1950,4 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         overlayView = null
         overlayDisplay = null
     }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
 }

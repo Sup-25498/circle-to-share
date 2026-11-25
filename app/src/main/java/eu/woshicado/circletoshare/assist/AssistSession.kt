@@ -27,6 +27,7 @@ import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.animationSettleMs
+import eu.woshicado.circletoshare.keyguardExitGraceMs
 import eu.woshicado.circletoshare.capture.CaptureInfo
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.capture.ScrollCapture
@@ -204,9 +205,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     private fun awaitUnlockThenOpen() {
         awaitingUnlock = true
         val gen = showGeneration
-        val deadline = SystemClock.uptimeMillis() + animationSettleMs(
-            context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS
-        ).coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
+        val deadline = SystemClock.uptimeMillis() + keyguardExitGraceMs(context)
         val check = object : Runnable {
             override fun run() {
                 if (gen != showGeneration || !awaitingUnlock) return // hidden meanwhile
@@ -622,16 +621,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             return
         }
         // A share or a copy shows for itself (the share sheet, the system's
-        // clipboard notice), from this window while it is up (see
-        // ShareHelper.handOver): the tool waits for the image.
-        cropScreen.setDelivering(true)
-        ShareHelper.deliver(context, bitmap, bounds, action, app) { result ->
-            if (gen != showGeneration || !visible) return@deliver // closed meanwhile: no longer wanted
-            // (A share sheet or a clipboard that throws is said as any failure.)
-            result
-                .mapCatching { ShareHelper.handOver(context, action, it) }
-                .onSuccess { hide() }
-                .onFailure { fail(ShareHelper.failureMessage(it)) }
+        // clipboard notice), from this window while it is up.
+        cropScreen.shareOrCopy(bitmap, bounds, action, app, isOpen = { gen == showGeneration && visible }) { failure ->
+            if (failure == null) hide() else fail(failure)
         }
     }
 
@@ -688,13 +680,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // long enough to tap it, to view the image).
         const val SAVED_MESSAGE_MS = 3500L
 
-        // How long a lock screen that was up at the show gets to finish
-        // going away (the tile's values for the same wait; scaled with the
-        // system's animation speed like every other wait here), and how
-        // often to look.
-        const val KEYGUARD_EXIT_GRACE_MS = 400f
-        const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
-        const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L
+        // How often to look whether a lock screen that was up at the show
+        // has gone (see keyguardExitGraceMs).
         const val KEYGUARD_POLL_MS = 50L
     }
 }

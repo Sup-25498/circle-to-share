@@ -3,6 +3,7 @@ package eu.woshicado.circletoshare
 import android.content.Context
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import kotlin.math.max
@@ -18,6 +19,20 @@ class WrapRow(context: Context, attrs: AttributeSet? = null) : ViewGroup(context
     private val across = dp(GAP_ACROSS_DP)
     private val down = dp(GAP_DOWN_DP)
 
+    // Where each child goes, by its index, from the start and the top:
+    // worked out as it is measured, so that it is laid out on the lines it
+    // was measured on.
+    private var xs = IntArray(0)
+    private var ys = IntArray(0)
+
+    override fun onViewAdded(child: View) {
+        super.onViewAdded(child)
+        if (xs.size < childCount) {
+            xs = IntArray(childCount)
+            ys = IntArray(childCount)
+        }
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val room = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) Int.MAX_VALUE
         else MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
@@ -25,7 +40,9 @@ class WrapRow(context: Context, attrs: AttributeSet? = null) : ViewGroup(context
         var y = 0
         var line = 0
         var widest = 0
-        for (child in shown()) {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child.visibility == GONE) continue
             measureChild(child, widthMeasureSpec, heightMeasureSpec)
             if (x > 0 && x + across + child.measuredWidth > room) {
                 y += line + down
@@ -33,6 +50,8 @@ class WrapRow(context: Context, attrs: AttributeSet? = null) : ViewGroup(context
                 line = 0
             }
             if (x > 0) x += across
+            xs[i] = x
+            ys[i] = y
             x += child.measuredWidth
             line = max(line, child.measuredHeight)
             widest = max(widest, x)
@@ -44,28 +63,15 @@ class WrapRow(context: Context, attrs: AttributeSet? = null) : ViewGroup(context
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val room = r - l - paddingLeft - paddingRight
         val rtl = layoutDirection == LAYOUT_DIRECTION_RTL
-        var x = 0
-        var y = paddingTop
-        var line = 0
-        for (child in shown()) {
-            if (x > 0 && x + across + child.measuredWidth > room) {
-                y += line + down
-                x = 0
-                line = 0
-            }
-            if (x > 0) x += across
-            val left = if (rtl) r - l - paddingRight - x - child.measuredWidth else paddingLeft + x
-            child.layout(left, y, left + child.measuredWidth, y + child.measuredHeight)
-            x += child.measuredWidth
-            line = max(line, child.measuredHeight)
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (child.visibility == GONE) continue
+            val left = if (rtl) r - l - paddingRight - xs[i] - child.measuredWidth else paddingLeft + xs[i]
+            val top = paddingTop + ys[i]
+            child.layout(left, top, left + child.measuredWidth, top + child.measuredHeight)
         }
     }
-
-    private fun shown() = (0 until childCount).map(::getChildAt).filter { it.visibility != GONE }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val GAP_ACROSS_DP = 12
@@ -115,8 +121,6 @@ class SliderTable(context: Context, attrs: AttributeSet? = null) : LinearLayout(
             weight = if (beside) 1f else 0f
         }
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         // Short of this, a slider's steps are too close together to pick.

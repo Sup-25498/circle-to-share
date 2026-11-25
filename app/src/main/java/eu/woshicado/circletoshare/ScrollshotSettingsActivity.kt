@@ -392,8 +392,6 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
     private companion object {
         const val STATE_APPS_OPEN = "apps_open"
         const val STATE_QUERY = "query"

@@ -372,12 +372,6 @@ object LayoutMarkdown {
     private val CODEY = Regex("^(>>>|\\.\\.\\.|\\$ |//|def |class |import |from |return |const |let |var |function )")
     private val CODE_CHARS = Regex("[{}();=\\[\\]<>]{2,}|\\w\\(.*\\)")
 
-    fun median(values: List<Float>): Float {
-        if (values.isEmpty()) return 0f
-        val s = values.sorted()
-        return if (s.size % 2 == 1) s[s.size / 2] else (s[s.size / 2 - 1] + s[s.size / 2]) / 2
-    }
-
     private fun stdev(values: List<Float>): Double {
         val mean = values.average()
         return sqrt(values.sumOf { (it - mean) * (it - mean) } / values.size)
@@ -405,4 +399,12 @@ object LayoutMarkdown {
         for (p in px) counts[p.coerceIn(0, 255)]++
         return counts.indices.maxBy { counts[it] }.toFloat()
     }
+}
+
+/** The middle of [values] (in any order), or the mean of the two middle
+ *  ones; 0 for none. */
+internal fun median(values: List<Float>): Float {
+    if (values.isEmpty()) return 0f
+    val s = values.sorted()
+    return if (s.size % 2 == 1) s[s.size / 2] else (s[s.size / 2 - 1] + s[s.size / 2]) / 2
 }

@@ -31,15 +31,8 @@
              (see MainActivity.renderSetup). The whole row is the button. -->
         <LinearLayout
             android:id="@+id/setup_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader"
+            android:layout_marginTop="24dp">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -62,11 +55,7 @@
 
             <ImageView
                 android:id="@+id/setup_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -225,15 +214,7 @@
              they were left (see MainActivity.showTriggers). -->
         <LinearLayout
             android:id="@+id/triggers_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -259,11 +240,7 @@
 
             <ImageView
                 android:id="@+id/triggers_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -440,15 +417,7 @@
         <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
             android:id="@+id/crop_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -460,11 +429,7 @@
 
             <ImageView
                 android:id="@+id/crop_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -542,15 +507,7 @@
         <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
             android:id="@+id/extras_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -562,11 +519,7 @@
 
             <ImageView
                 android:id="@+id/extras_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -716,15 +669,7 @@
         <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
             android:id="@+id/experimental_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -736,11 +681,7 @@
 
             <ImageView
                 android:id="@+id/experimental_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -808,15 +749,7 @@
         <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
             android:id="@+id/saving_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -828,11 +761,7 @@
 
             <ImageView
                 android:id="@+id/saving_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout
@@ -925,15 +854,7 @@
         <!-- Folds by hand and stays as left (see MainActivity.folds). -->
         <LinearLayout
             android:id="@+id/about_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:orientation="horizontal">
+            style="@style/Widget.CircleToShare.SectionHeader">
 
             <TextView
                 style="@style/Widget.CircleToShare.SectionHeading"
@@ -945,11 +866,7 @@
 
             <ImageView
                 android:id="@+id/about_chevron"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_expand_more"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                style="@style/Widget.CircleToShare.SectionChevron" />
         </LinearLayout>
 
         <LinearLayout

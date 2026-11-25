@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.text.Spanned
 import android.text.style.StyleSpan
-import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import java.util.concurrent.Executors
@@ -59,7 +58,8 @@ internal object ScreenTextReader {
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "screen-text") }
 
     /**
-     * Starts reading [windows] (the app windows among them) in the background;
+     * Starts reading [windows] (the app's windows: see
+     * ScreenshotAccessibilityService.appWindows) in the background;
      * this app's own ([ownPackage]: its settings) right away, on this thread.
      * Those answer the service on the main thread, the one a show of the
      * assistant's tool waits on (AssistSession): in the background their walk
@@ -69,11 +69,7 @@ internal object ScreenTextReader {
     fun start(windows: List<AccessibilityWindowInfo>, display: Rect, ownPackage: String): PendingScreenText {
         val pending = PendingScreenText()
         // The roots now, while the app's windows are what is on screen.
-        val roots = windows.filter {
-            // Application windows only, as for the snap bounds: not our own
-            // overlays, the system bars or the keyboard.
-            it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.displayId == Display.DEFAULT_DISPLAY
-        }.mapNotNull { it.root }
+        val roots = windows.mapNotNull { it.root }
         if (roots.isEmpty()) return pending.also { it.complete(null) }
         val own = roots.map { it.packageName?.toString() == ownPackage }
         val nodes = arrayOfNulls<TextNode>(roots.size)
@@ -127,26 +123,15 @@ internal object ScreenTextReader {
             val box = Box(r.left, r.top, r.right, r.bottom)
             val children = ArrayList<TextNode>()
             if (depth < MAX_DEPTH) {
-                val count = info.childCount
-                val sorted = count >= NodeWalk.SEARCH_MIN && NodeWalk.runsDownThePage(info, count)
-                var i = if (sorted) NodeWalk.firstChildReachingScreen(info, count, display) else 0
-                var seenOnScreen = false
                 val bounds = Rect()
-                while (i < count && !spent()) {
-                    val child = info.getChild(i++) ?: continue
+                NodeWalk.childrenOnScreen(info, display, more = { !spent() }) { child ->
                     child.getBoundsInScreen(bounds)
-                    if (sorted) {
-                        if (!bounds.isEmpty && bounds.top >= display.bottom) {
-                            if (seenOnScreen) break
-                        } else if (Rect.intersects(bounds, display)) {
-                            seenOnScreen = true
-                        }
-                    }
                     // A leaf off the screen can't be in a crop. (Empty bounds pass:
                     // line breaks of a code block are empty, and can sit right of
                     // the screen.)
-                    if (!bounds.isEmpty && !Rect.intersects(bounds, display) && child.childCount == 0) continue
-                    node(child, depth + 1)?.let { children += it }
+                    if (bounds.isEmpty || Rect.intersects(bounds, display) || child.childCount > 0) {
+                        node(child, depth + 1)?.let { children += it }
+                    }
                 }
             }
             val text = if (info.isPassword) null else info.text

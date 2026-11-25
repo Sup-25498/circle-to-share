@@ -18,6 +18,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.graphics.withSave
+import eu.woshicado.circletoshare.dp
 import eu.woshicado.circletoshare.qr.QrCode
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -223,10 +224,10 @@ class CropOverlayView @JvmOverloads constructor(
     private var snapYs = FloatArray(0)
     private val snapThreshold = dp(10f)
     private val edgeSnap = dp(12f)
-    // Currently engaged snap line per axis (NaN = free) — tracked only to fire
-    // one haptic tick per engagement, not to make snapping stateful.
-    private var engagedSnapX = Float.NaN
-    private var engagedSnapY = Float.NaN
+    // Currently engaged snap line per axis, x then y (NaN = free) — tracked
+    // only to fire one haptic tick per engagement, not to make snapping
+    // stateful.
+    private val engagedSnap = floatArrayOf(Float.NaN, Float.NaN)
 
     // --- Detected QR codes --------------------------------------------------
     // Codes in bitmap space, plus their view-space boxes (re)derived from the
@@ -502,29 +503,20 @@ class CropOverlayView @JvmOverloads constructor(
         return best
     }
 
-    /** Snap [value] on the x-axis (stateless), ticking on new engagement. */
-    private fun snapX(value: Float): Float {
-        val line = nearestSnapLine(value, snapXs)
-        if (line.isNaN()) {
-            engagedSnapX = Float.NaN
-            return value
-        }
-        if (line != engagedSnapX) {
-            engagedSnapX = line
-            performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-        }
-        return line
-    }
+    private fun snapX(value: Float): Float = snap(value, snapXs, axis = 0)
 
-    /** Snap [value] on the y-axis (stateless), ticking on new engagement. */
-    private fun snapY(value: Float): Float {
-        val line = nearestSnapLine(value, snapYs)
+    private fun snapY(value: Float): Float = snap(value, snapYs, axis = 1)
+
+    /** Snap [value] onto the nearest of [lines] (stateless), ticking on a
+     *  new engagement of [axis] (0: x, 1: y). */
+    private fun snap(value: Float, lines: FloatArray, axis: Int): Float {
+        val line = nearestSnapLine(value, lines)
         if (line.isNaN()) {
-            engagedSnapY = Float.NaN
+            engagedSnap[axis] = Float.NaN
             return value
         }
-        if (line != engagedSnapY) {
-            engagedSnapY = line
+        if (line != engagedSnap[axis]) {
+            engagedSnap[axis] = line
             performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
         return line
@@ -548,8 +540,7 @@ class CropOverlayView @JvmOverloads constructor(
     var snapToEdges = true
 
     private fun resetSnapEngagement() {
-        engagedSnapX = Float.NaN
-        engagedSnapY = Float.NaN
+        engagedSnap.fill(Float.NaN)
     }
 
     /**
@@ -743,16 +734,6 @@ class CropOverlayView @JvmOverloads constructor(
 
     /** How far the user has zoomed in (1: as the picture fits). */
     val zoom: Float get() = FloatArray(9).also(userMatrix::getValues)[Matrix.MSCALE_X]
-
-    /** Where [rect], in this view, lies in the picture's pixels (within it). */
-    fun mapToPicture(rect: RectF): Rect {
-        val mapped = RectF(rect).also { inverseMatrix.mapRect(it) }
-        val b = bitmap ?: return Rect()
-        return Rect(
-            mapped.left.toInt().coerceIn(0, b.width), mapped.top.toInt().coerceIn(0, b.height),
-            mapped.right.toInt().coerceIn(0, b.width), mapped.bottom.toInt().coerceIn(0, b.height)
-        )
-    }
 
     private fun updateMatrix() {
         val b = bitmap ?: return
@@ -1227,9 +1208,6 @@ class CropOverlayView @JvmOverloads constructor(
         top = top.coerceIn(imageBounds.top, max(imageBounds.top, imageBounds.bottom - h))
         sel.set(left, top, left + w, top + h)
     }
-
-    private fun dp(value: Float): Float =
-        value * resources.displayMetrics.density
 
     /** A detected code's view-space box and its ready-to-draw chip label. */
     private data class QrHighlight(

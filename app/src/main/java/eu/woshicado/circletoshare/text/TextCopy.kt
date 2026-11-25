@@ -1,14 +1,11 @@
 package eu.woshicado.circletoshare.text
 
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
-import android.widget.Toast
-import eu.woshicado.circletoshare.R
 import java.util.concurrent.Executors
 
 /**
@@ -51,17 +48,21 @@ object TextCopy {
     /**
      * Reads the text of [selection] (in [bitmap]'s pixels) and hands the
      * blocks — empty when there is none — to [done] on the main thread,
-     * unless the [Job] is cancelled first.
+     * unless the [Job] is cancelled first. [slow], on the main thread, if
+     * the wait for the tree's text is a long one (a long page can take
+     * seconds to read): for the caller to say so.
      */
     fun start(
-        context: Context, bitmap: Bitmap, selection: Rect, screen: PendingScreenText?, done: (List<Block>) -> Unit,
+        context: Context, bitmap: Bitmap, selection: Rect, screen: PendingScreenText?,
+        slow: () -> Unit, done: (List<Block>) -> Unit,
     ): Job {
         val job = Job()
         val app = context.applicationContext
+        val sayingSlow = Runnable { if (!job.cancelled) slow() }
         releaseLater()
         worker.execute {
             val blocks = try {
-                read(app, bitmap, selection, screen) { job.cancelled }
+                read(app, bitmap, selection, screen, sayingSlow) { job.cancelled }
             } catch (_: java.util.concurrent.CancellationException) {
                 emptyList() // the tool closed: no one waits for it
             } catch (t: Throwable) {
@@ -75,7 +76,8 @@ object TextCopy {
     }
 
     private fun read(
-        context: Context, bitmap: Bitmap, selection: Rect, pending: PendingScreenText?, cancelled: () -> Boolean,
+        context: Context, bitmap: Bitmap, selection: Rect, pending: PendingScreenText?, slow: Runnable,
+        cancelled: () -> Boolean,
     ): List<Block> {
         val begun = android.os.SystemClock.uptimeMillis()
         val area = Rect(selection).apply { intersect(0, 0, bitmap.width, bitmap.height) }
@@ -103,8 +105,6 @@ object TextCopy {
         }
         // The tree's text, if its reading isn't done yet (while OCR looked).
         val detected = android.os.SystemClock.uptimeMillis()
-        // A long page can take seconds to read: say so if this wait is a long one.
-        val slow = Runnable { Toast.makeText(context, R.string.text_reading, Toast.LENGTH_SHORT).show() }
         if (pending != null && !pending.isDone) main.postDelayed(slow, SLOW_WAIT_MS)
         val screen = pending?.await()
         main.removeCallbacks(slow)
@@ -137,15 +137,12 @@ object TextCopy {
         )
     }
 
-    /** Markdown for plain-text fields, HTML for rich ones (mail, documents);
-     *  or, with the formatting switched off, plain text. */
-    fun toClipboard(context: Context, blocks: List<Block>, markdown: Boolean) {
-        val clipboard = context.getSystemService(ClipboardManager::class.java)
-        clipboard.setPrimaryClip(
-            if (markdown) ClipData.newHtmlText("text", blocks.toMarkdown(), blocks.toHtml())
-            else ClipData.newPlainText("text", blocks.toPlainText())
-        )
-    }
+    /** [blocks] for the clipboard: Markdown for plain-text fields, HTML for
+     *  rich ones (mail, documents); or, with the formatting switched off,
+     *  plain text. */
+    fun clip(blocks: List<Block>, markdown: Boolean): ClipData =
+        if (markdown) ClipData.newHtmlText("text", blocks.toMarkdown(), blocks.toHtml())
+        else ClipData.newPlainText("text", blocks.toPlainText())
 
     class Job internal constructor() {
         @Volatile

@@ -69,7 +69,7 @@ private fun AppCompatActivity.showSetupHelp(
     clipView.visibility = View.VISIBLE
     val aspect = animation.intrinsicWidth.toFloat() / animation.intrinsicHeight
     val maxClipWidth = card.width - content.paddingLeft - content.paddingRight
-    val minClipHeight = MIN_CLIP_HEIGHT_DP * resources.displayMetrics.density
+    val minClipHeight = dp(MIN_CLIP_HEIGHT_DP.toFloat())
     val clipHeight = min(maxClipWidth / aspect, (card.room - textHeight).toFloat()).coerceAtLeast(minClipHeight)
     clipView.layoutParams = clipView.layoutParams.apply {
         width = (clipHeight * aspect).roundToInt()

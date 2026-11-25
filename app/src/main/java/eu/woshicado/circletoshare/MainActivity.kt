@@ -174,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                     val scrollLoc = IntArray(2).also { v.getLocationOnScreen(it) }
                     val focusBottom = focusLoc[1] + focus.height - scrollLoc[1]
                     val visibleBottom = v.height - ime.bottom
-                    val margin = (16 * resources.displayMetrics.density).toInt()
+                    val margin = dp(16)
                     val delta = focusBottom - visibleBottom + margin
                     if (delta > 0) (v as ScrollView).smoothScrollBy(0, delta)
                 }
@@ -295,9 +295,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Slider>(R.id.slider_bubble_opacity).apply {
             // Range and step come from the service, which snaps stored values
             // to exactly these.
-            valueFrom = ScreenshotAccessibilityService.BUBBLE_OPACITY_MIN.toFloat()
-            valueTo = ScreenshotAccessibilityService.BUBBLE_OPACITY_MAX.toFloat()
-            stepSize = ScreenshotAccessibilityService.BUBBLE_OPACITY_STEP.toFloat()
+            valueFrom = Prefs.BUBBLE_OPACITY_MIN.toFloat()
+            valueTo = Prefs.BUBBLE_OPACITY_MAX.toFloat()
+            stepSize = Prefs.BUBBLE_OPACITY_STEP.toFloat()
             value = valueTo
             setLabelFormatter { getString(R.string.bubble_opacity_value, it.roundToInt()) }
             // While a finger is on the slider the bubble only previews the
@@ -626,13 +626,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         syncingSwitches = true
-        val bubbleEnabled = ScreenshotAccessibilityService.isBubbleEnabled(this)
+        val bubbleEnabled = Prefs.isBubbleEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_bubble).isChecked = bubbleEnabled
         // Not under the user's finger: this also runs when a watched setting
         // changes, which can be mid-drag.
         if (!opacityTracking) {
             findViewById<Slider>(R.id.slider_bubble_opacity).value =
-                ScreenshotAccessibilityService.getBubbleOpacity(this).toFloat()
+                Prefs.getBubbleOpacity(this).toFloat()
         }
         setOpacityRowVisible(bubbleEnabled)
         renderTriggersSummary()
@@ -824,7 +824,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFold(fold: Fold, show: Boolean) {
         showSection(fold.header, fold.chevron, fold.content, show)
-        if (fold.header == R.id.triggers_header) renderTriggersSummary()
+        fold.then()
     }
 
     /** Folded, the header of "How to open it" says what of the section is
@@ -833,7 +833,7 @@ class MainActivity : AppCompatActivity() {
      *  service it needs is off, which Setup's header says) the header would
      *  send the user to a switch that is on already. */
     internal fun renderTriggersSummary(
-        bubbleOn: Boolean = ScreenshotAccessibilityService.isBubbleEnabled(this)
+        bubbleOn: Boolean = Prefs.isBubbleEnabled(this)
     ) {
         val folded = findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
         findViewById<TextView>(R.id.triggers_summary).apply {
@@ -929,7 +929,7 @@ class MainActivity : AppCompatActivity() {
      *  service running, puts its own answer here. */
     @VisibleForTesting
     internal var fallbackCheck: () -> Boolean = {
-        ScreenshotAccessibilityService.instance != null && Prefs.hasAccessibilityConsent(this)
+        ScreenshotAccessibilityService.whyNotReady(this) == null
     }
 
     private fun openAccessibilitySettings() =
@@ -960,11 +960,16 @@ class MainActivity : AppCompatActivity() {
     private var assistantStaleSince = 0L
     private var fallbackStaleSince = 0L
 
-    /** A section that folds under its header by hand: kept by [name]. */
-    private class Fold(val name: String, val header: Int, val chevron: Int, val content: Int)
+    /** A section that folds under its header by hand: kept by [name].
+     *  [then]: what changes with it, open or folded. */
+    private class Fold(
+        val name: String, val header: Int, val chevron: Int, val content: Int, val then: () -> Unit = {},
+    )
 
     private val folds = listOf(
-        Fold("triggers", R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content),
+        Fold("triggers", R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content) {
+            renderTriggersSummary()
+        },
         Fold("crop", R.id.crop_header, R.id.crop_chevron, R.id.crop_content),
         Fold("extras", R.id.extras_header, R.id.extras_chevron, R.id.extras_content),
         Fold("experimental", R.id.experimental_header, R.id.experimental_chevron, R.id.experimental_content),

@@ -256,10 +256,9 @@ object TextFusion {
      *  some leaf of the tree with text. */
     private fun coverage(screen: ScreenText, ocr: List<Box>): Double {
         val boxes = ArrayList<Box>()
-        fun textBelow(n: TextNode): Boolean = n.children.any { it.hasText || textBelow(it) }
         fun walk(n: TextNode) {
             // Leaves only: a web view's root carries the page title over the whole screen.
-            if (n.hasText && !n.bounds.empty && !textBelow(n) && n.cls != "WebView" && !n.isImage) boxes += n.bounds
+            if (n.hasText && !n.bounds.empty && !n.textBelow && n.cls != "WebView" && !n.isImage) boxes += n.bounds
             n.children.forEach { walk(it) }
         }
         screen.windows.forEach { walk(it) }

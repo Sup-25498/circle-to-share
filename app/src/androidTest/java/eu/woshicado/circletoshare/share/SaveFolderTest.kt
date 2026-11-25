@@ -12,6 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.materialswitch.MaterialSwitch
 import eu.woshicado.circletoshare.MainActivity
+import eu.woshicado.circletoshare.KeepPrefs
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import org.junit.After
@@ -19,7 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -34,19 +35,11 @@ class SaveFolderTest {
     private val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
     private val saved = mutableListOf<Uri>()
 
-    private var dirWas: String? = null
-    private var perAppWas = false
-
-    @Before
-    fun remember() {
-        dirWas = Prefs.getSaveDir(context)
-        perAppWas = Prefs.isSavePerApp(context)
-    }
+    @get:Rule
+    val kept = KeepPrefs()
 
     @After
-    fun restore() {
-        Prefs.setSaveDir(context, dirWas)
-        Prefs.setSavePerApp(context, perAppWas)
+    fun tearDown() {
         saved.forEach { runCatching { context.contentResolver.delete(it, null, null) } }
     }
 
@@ -137,7 +130,7 @@ class SaveFolderTest {
     @Test
     fun theSettings_startAtScreenshots_withNoFolderPerApp() {
         Prefs.setSaveDir(context, null)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().remove("save_per_app").commit()
+        kept.store.edit().remove("save_per_app").commit()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 assertEquals(

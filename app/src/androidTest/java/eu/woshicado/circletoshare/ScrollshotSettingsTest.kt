@@ -9,11 +9,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -28,33 +28,14 @@ class ScrollshotSettingsTest {
     private val app = context.packageName
     private val appLabel = context.applicationInfo.loadLabel(context.packageManager).toString()
 
-    private var stepWas = 0
-    private var handlesWere = true
-    private var snapWas = false
-    private var appsWere: Set<String>? = null
+    @get:Rule
+    val kept = KeepPrefs()
 
     @Before
-    fun remember() {
-        stepWas = Prefs.getCaptureMoreStep(context)
-        handlesWere = Prefs.isCaptureMoreHandleRemovalEnabled(context)
-        snapWas = Prefs.isSnapEnabled(context)
+    fun setUp() {
         // The apps that have settings of their own on this device are out
-        // of the way for the test (what they are set to stays where it is).
-        val prefs = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
-        appsWere = prefs.getStringSet("scrollshot_apps", null)?.let { HashSet(it) }
-        prefs.edit().remove("scrollshot_apps").commit()
-    }
-
-    @After
-    fun restore() {
-        Prefs.setAppOverride(context, app, false)
-        Prefs.setCaptureMoreStep(context, stepWas)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().apply {
-            if (appsWere == null) remove("scrollshot_apps") else putStringSet("scrollshot_apps", appsWere)
-        }.commit()
-        Prefs.setCaptureMoreHandleRemovalEnabled(context, handlesWere)
-        Prefs.setSnapEnabled(context, snapWas)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().commit()
+        // of the way for the test (put back with the rest: see KeepPrefs).
+        kept.store.edit().remove("scrollshot_apps").commit()
     }
 
     private fun ActivityScenario<ScrollshotSettingsActivity>.shownApps(): List<String> {

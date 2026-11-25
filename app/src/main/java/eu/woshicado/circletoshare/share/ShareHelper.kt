@@ -1,7 +1,6 @@
 package eu.woshicado.circletoshare.share
 
 import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -19,10 +18,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
-import android.widget.Toast
 import androidx.core.content.FileProvider
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.copyToClipboard
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -145,9 +144,7 @@ object ShareHelper {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             context.startActivity(chooser)
         } else if (action == Delivery.COPY) {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, "screenshot", uri))
-            Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
+            copyToClipboard(context, ClipData.newUri(context.contentResolver, "screenshot", uri), R.string.copied)
         }
     }
 

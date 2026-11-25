@@ -10,13 +10,12 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.nio.ByteBuffer
@@ -27,21 +26,9 @@ class SetupHelpTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    // Whether "How to open it" is folded is stored, and these tests tap its
-    // header: as found, afterwards.
-    private var triggersWere = true
-
-    @Before
-    fun remember() {
-        triggersWere = Prefs.isSectionExpanded(instrumentation.targetContext, "triggers")
-    }
-
-    @After
-    fun restore() {
-        Prefs.setSectionExpanded(instrumentation.targetContext, "triggers", triggersWere)
-        instrumentation.targetContext.getSharedPreferences("cts", android.content.Context.MODE_PRIVATE)
-            .edit().commit()
-    }
+    // (These tests tap "How to open it", whose folding is stored.)
+    @get:Rule
+    val kept = KeepPrefs()
 
     private class Helper(val button: Int, val title: Int, val clip: Int)
 

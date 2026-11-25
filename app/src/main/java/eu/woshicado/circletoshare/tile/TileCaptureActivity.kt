@@ -6,6 +6,7 @@ import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.capture.CaptureStarterActivity
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService.Refusal
+import eu.woshicado.circletoshare.keyguardExitGraceMs
 
 /**
  * What a tap on the tile starts from Android 15 on: SystemUI starts it
@@ -28,6 +29,6 @@ class TileCaptureActivity : CaptureStarterActivity() {
             if (ScreenshotAccessibilityService.instance?.triggerCaptureFromTileLaunch() == Refusal.LOCKED) {
                 ScreenshotAccessibilityService.notify(app, R.string.error_tile_locked)
             }
-        }, CaptureTileService.keyguardExitGraceMs(app))
+        }, keyguardExitGraceMs(app))
     }
 }

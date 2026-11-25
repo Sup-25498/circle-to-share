@@ -3,12 +3,14 @@ package eu.woshicado.circletoshare
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.Rect
 import kotlin.math.roundToInt
 
 /** Small app-wide preferences (same store the accessibility service uses). */
 object Prefs {
-    private const val NAME = "cts"
+    // (Internal for the tests: see KeepPrefs.)
+    internal const val NAME = "cts"
     private const val KEY_FREEFORM = "freeform_crop"
     private const val KEY_SNAP = "snap_to_content"
     private const val KEY_SNAP_EDGES = "snap_to_edges"
@@ -21,14 +23,31 @@ object Prefs {
     private const val KEY_A11Y_TEXT_ASKED = "a11y_text_asked"
     private const val KEY_CAPTURE_MORE = "capture_more"
     // After the section's name: "triggers_expanded" (as kept before the other
-// sections folded too), "crop_expanded", ...
-private const val KEY_SECTION_EXPANDED = "_expanded"
+    // sections folded too), "crop_expanded", ...
+    private const val KEY_SECTION_EXPANDED = "_expanded"
     private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
     private const val KEY_CAPTURE_MORE_STEP_SIDEWAYS = "capture_more_step_sideways"
     private const val KEY_CAPTURE_MORE_HANDLES = "capture_more_handles"
     private const val KEY_SAVE_DIR = "save_dir"
     private const val KEY_SAVE_PER_APP = "save_per_app"
     private const val KEY_LANGUAGE = "language"
+    private const val KEY_BUBBLE = "bubble_enabled"
+    private const val KEY_BUBBLE_X = "bubble_x"
+    private const val KEY_BUBBLE_Y = "bubble_y"
+    private const val KEY_BUBBLE_OPACITY = "bubble_opacity"
+    // Set once the saved spot is known to be measured from the display's
+    // corner — see ScreenshotAccessibilityService.migrateBubbleOrigin.
+    private const val KEY_BUBBLE_ORIGIN_DISPLAY = "bubble_origin_display"
+    private const val UNSET = Int.MIN_VALUE
+
+    // Bubble opacity in percent. The floor keeps a bubble that has to be
+    // found again (to drag or tap it) from fading out of sight entirely.
+    const val BUBBLE_OPACITY_MIN = 20
+    const val BUBBLE_OPACITY_MAX = 100
+    const val BUBBLE_OPACITY_STEP = 5
+
+    // The one store they are all kept in.
+    private fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     // The apps with settings of their own (see setAppOverride), and where
     // each of an app's is kept.
@@ -76,12 +95,10 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * it — being switched on in Settings is not an answer to what it reads.
      */
     fun hasAccessibilityConsent(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_A11Y_CONSENT, false)
+        prefs(context).getBoolean(KEY_A11Y_CONSENT, false)
 
     fun setAccessibilityConsent(context: Context, granted: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_A11Y_CONSENT, granted).apply()
+        prefs(context).edit().putBoolean(KEY_A11Y_CONSENT, granted).apply()
     }
 
     /**
@@ -92,33 +109,27 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * asked again, and until then "Copy text" reads the picture instead.
      */
     fun hasTextConsent(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_A11Y_TEXT_CONSENT, false)
+        prefs(context).getBoolean(KEY_A11Y_TEXT_CONSENT, false)
 
     fun setTextConsent(context: Context, granted: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_A11Y_TEXT_CONSENT, granted).apply()
+        prefs(context).edit().putBoolean(KEY_A11Y_TEXT_CONSENT, granted).apply()
     }
 
     /** Whether the updated disclosure was put to someone who had agreed to
      *  the one before ([hasTextConsent]): it is, once. */
     fun wasTextConsentAsked(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_A11Y_TEXT_ASKED, false)
+        prefs(context).getBoolean(KEY_A11Y_TEXT_ASKED, false)
 
     fun setTextConsentAsked(context: Context) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_A11Y_TEXT_ASKED, true).apply()
+        prefs(context).edit().putBoolean(KEY_A11Y_TEXT_ASKED, true).apply()
     }
 
     /** True = draw a freeform circle (default); false = drag a rectangle. */
     fun isFreeformCrop(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_FREEFORM, true)
+        prefs(context).getBoolean(KEY_FREEFORM, true)
 
     fun setFreeformCrop(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_FREEFORM, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_FREEFORM, enabled).apply()
     }
 
     /**
@@ -129,7 +140,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * has one (see [setAppOverride]), this one otherwise.
      */
     fun isSnapEnabled(context: Context, packageName: String? = null): Boolean {
-        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context)
         val general = prefs.getBoolean(KEY_SNAP, false)
         return ownKey(prefs, packageName, APP_SNAP)?.let { prefs.getBoolean(it, general) } ?: general
     }
@@ -144,7 +155,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     /** [packageName] null: the general setting. Else that app's own, which
      *  only counts while the app has an override. */
     fun setSnapEnabled(context: Context, enabled: Boolean, packageName: String? = null) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        prefs(context).edit()
             .putBoolean(packageName?.let { appKey(it, APP_SNAP) } ?: KEY_SNAP, enabled)
             .apply()
     }
@@ -157,8 +168,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     fun getAppOverrides(context: Context): Set<String> =
         // (A copy: the set SharedPreferences hands out must not be changed.)
         HashSet(
-            context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-                .getStringSet(KEY_APP_OVERRIDES, emptySet()) ?: emptySet()
+            prefs(context).getStringSet(KEY_APP_OVERRIDES, emptySet()) ?: emptySet()
         )
 
     /**
@@ -168,7 +178,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      */
     fun setAppOverride(context: Context, packageName: String, enabled: Boolean) {
         val apps = getAppOverrides(context).toMutableSet()
-        val editor = context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        val editor = prefs(context).edit()
         if (enabled) {
             if (!apps.add(packageName)) return
             editor.putInt(appKey(packageName, APP_STEP), getCaptureMoreStep(context))
@@ -188,12 +198,10 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     /** True = the crop tool offers scrollshots: the "More above" and "More
      *  below" buttons (needs the accessibility service). Off by default. */
     fun isCaptureMoreEnabled(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_CAPTURE_MORE, false)
+        prefs(context).getBoolean(KEY_CAPTURE_MORE, false)
 
     fun setCaptureMoreEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_CAPTURE_MORE, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_CAPTURE_MORE, enabled).apply()
     }
 
     /**
@@ -210,24 +218,76 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
         step(context, packageName, KEY_CAPTURE_MORE_STEP_SIDEWAYS, APP_STEP_SIDEWAYS, CAPTURE_MORE_STEP_SIDEWAYS_DEFAULT)
 
     private fun step(context: Context, packageName: String?, key: String, appSetting: String, default: Int): Int {
-        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context)
         val general = prefs.getInt(key, default)
         val stored = ownKey(prefs, packageName, appSetting)?.let { prefs.getInt(it, general) } ?: general
-        val steps = ((stored - CAPTURE_MORE_STEP_MIN).toFloat() / CAPTURE_MORE_STEP_STEP).roundToInt()
-        return (CAPTURE_MORE_STEP_MIN + steps * CAPTURE_MORE_STEP_STEP)
-            .coerceIn(CAPTURE_MORE_STEP_MIN, CAPTURE_MORE_STEP_MAX)
+        return onSlider(stored, CAPTURE_MORE_STEP_MIN, CAPTURE_MORE_STEP_MAX, CAPTURE_MORE_STEP_STEP)
+    }
+
+    /** [value] as a slider from [min] to [max] in steps of [step] accepts it
+     *  (one throws on anything else): in range, on the nearest step. */
+    private fun onSlider(value: Int, min: Int, max: Int, step: Int): Int {
+        val steps = ((value - min).toFloat() / step).roundToInt()
+        return (min + steps * step).coerceIn(min, max)
+    }
+
+    /** Whether the floating capture button is on. */
+    fun isBubbleEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_BUBBLE, false)
+
+    /** Switched on, the spot it was dragged to is forgotten, so that a bubble
+     *  dragged out of reach can always be recovered. (For the bubble to
+     *  follow, see ScreenshotAccessibilityService.setBubblePref.) */
+    fun setBubbleEnabled(context: Context, enabled: Boolean) {
+        val editor = prefs(context).edit().putBoolean(KEY_BUBBLE, enabled)
+        if (enabled) editor.remove(KEY_BUBBLE_X).remove(KEY_BUBBLE_Y)
+        editor.apply()
+    }
+
+    /** Always a value the settings slider accepts (see onSlider). */
+    fun getBubbleOpacity(context: Context): Int = onSlider(
+        prefs(context).getInt(KEY_BUBBLE_OPACITY, BUBBLE_OPACITY_MAX),
+        BUBBLE_OPACITY_MIN, BUBBLE_OPACITY_MAX, BUBBLE_OPACITY_STEP
+    )
+
+    /** Keeps [percent] as the slider has it, and returns that. */
+    fun setBubbleOpacity(context: Context, percent: Int): Int {
+        val kept = onSlider(percent, BUBBLE_OPACITY_MIN, BUBBLE_OPACITY_MAX, BUBBLE_OPACITY_STEP)
+        prefs(context).edit().putInt(KEY_BUBBLE_OPACITY, kept).apply()
+        return kept
+    }
+
+    /** Where the bubble was left (its window's x and y), or null where it
+     *  has no spot of its own: never dragged, or forgotten. */
+    fun getBubblePosition(context: Context): Point? {
+        val prefs = prefs(context)
+        val x = prefs.getInt(KEY_BUBBLE_X, UNSET)
+        val y = prefs.getInt(KEY_BUBBLE_Y, UNSET)
+        return if (x == UNSET || y == UNSET) null else Point(x, y)
+    }
+
+    fun setBubblePosition(context: Context, x: Int, y: Int) {
+        prefs(context).edit().putInt(KEY_BUBBLE_X, x).putInt(KEY_BUBBLE_Y, y).apply()
+    }
+
+    /** Whether the bubble's spot is known to be measured from the display's
+     *  corner (see ScreenshotAccessibilityService.migrateBubbleOrigin). */
+    fun isBubbleOriginDisplay(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, false)
+
+    fun setBubbleOriginDisplay(context: Context) {
+        prefs(context).edit().putBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, true).apply()
     }
 
     /** [packageName] as for [setSnapEnabled]. */
     fun setCaptureMoreStep(context: Context, percent: Int, packageName: String? = null) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        prefs(context).edit()
             .putInt(packageName?.let { appKey(it, APP_STEP) } ?: KEY_CAPTURE_MORE_STEP, percent)
             .apply()
     }
 
     /** [packageName] as for [setSnapEnabled]. */
     fun setCaptureMoreStepSideways(context: Context, percent: Int, packageName: String? = null) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        prefs(context).edit()
             .putInt(packageName?.let { appKey(it, APP_STEP_SIDEWAYS) } ?: KEY_CAPTURE_MORE_STEP_SIDEWAYS, percent)
             .apply()
     }
@@ -239,7 +299,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * for [getCaptureMoreStep].
      */
     fun isCaptureMoreHandleRemovalEnabled(context: Context, packageName: String? = null): Boolean {
-        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context)
         val general = prefs.getBoolean(KEY_CAPTURE_MORE_HANDLES, true)
         return ownKey(prefs, packageName, APP_HANDLES)?.let { prefs.getBoolean(it, general) } ?: general
     }
@@ -248,7 +308,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     fun setCaptureMoreHandleRemovalEnabled(
         context: Context, enabled: Boolean, packageName: String? = null
     ) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        prefs(context).edit()
             .putBoolean(packageName?.let { appKey(it, APP_HANDLES) } ?: KEY_CAPTURE_MORE_HANDLES, enabled)
             .apply()
     }
@@ -256,11 +316,10 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     /** True = a crop edge near the picture's border is pulled onto it
      *  (default): a finger seldom reaches the very edge of the screen. */
     fun isSnapToEdgesEnabled(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(KEY_SNAP_EDGES, true)
+        prefs(context).getBoolean(KEY_SNAP_EDGES, true)
 
     fun setSnapToEdgesEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_SNAP_EDGES, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_SNAP_EDGES, enabled).apply()
     }
 
     /**
@@ -270,85 +329,73 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * goes back to Pictures/Screenshots whenever the folder can't be used.
      */
     fun getSaveDir(context: Context): String? =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(KEY_SAVE_DIR, null)
+        prefs(context).getString(KEY_SAVE_DIR, null)
 
     fun setSaveDir(context: Context, uri: String?) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_SAVE_DIR, uri).apply()
+        prefs(context).edit().putString(KEY_SAVE_DIR, uri).apply()
     }
 
     /** True = Save puts each image in a folder named after the app it is of,
      *  inside the save folder. Off by default. */
     fun isSavePerApp(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(KEY_SAVE_PER_APP, false)
+        prefs(context).getBoolean(KEY_SAVE_PER_APP, false)
 
     fun setSavePerApp(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_SAVE_PER_APP, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_SAVE_PER_APP, enabled).apply()
     }
 
     /** The language picked, as a language tag, null for the system's:
      *  kept here before Android 13 only (see Language). */
     fun getLanguage(context: Context): String? =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(KEY_LANGUAGE, null)
+        prefs(context).getString(KEY_LANGUAGE, null)
 
     fun setLanguage(context: Context, tag: String?) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_LANGUAGE, tag).apply()
+        prefs(context).edit().putString(KEY_LANGUAGE, tag).apply()
     }
 
     /** Whether the settings screen shows the section [section] ("triggers",
      *  "crop", ...: see MainActivity.folds) unfolded: as the user left it,
      *  open to begin with. */
     fun isSectionExpanded(context: Context, section: String): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(section + KEY_SECTION_EXPANDED, true)
+        prefs(context).getBoolean(section + KEY_SECTION_EXPANDED, true)
 
     fun setSectionExpanded(context: Context, section: String, expanded: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(section + KEY_SECTION_EXPANDED, expanded).apply()
+        prefs(context).edit().putBoolean(section + KEY_SECTION_EXPANDED, expanded).apply()
     }
 
     /** "Copy text": the button, and with it the reading of the screen's
      *  text at capture and the OCR models. Off by default: it is
      *  experimental, and switching it on shows the ExperimentalNoticeDialog. */
     fun isCopyTextEnabled(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_COPY_TEXT, false)
+        prefs(context).getBoolean(KEY_COPY_TEXT, false)
 
     fun setCopyTextEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_COPY_TEXT, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_COPY_TEXT, enabled).apply()
     }
 
     /** Whether Copy text formats what it copies as Markdown (and HTML), or
      *  copies plain text. On by default. */
     fun isCopyTextMarkdown(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_COPY_TEXT_MARKDOWN, true)
+        prefs(context).getBoolean(KEY_COPY_TEXT_MARKDOWN, true)
 
     fun setCopyTextMarkdown(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_COPY_TEXT_MARKDOWN, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_COPY_TEXT_MARKDOWN, enabled).apply()
     }
 
     /** True = scan each capture for QR codes and highlight them (default on).
      *  Decoding runs on-device (ZXing); the scan is per-capture, in memory
      *  only, and nothing is stored or sent anywhere. */
     fun isQrDetectEnabled(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_QR, true)
+        prefs(context).getBoolean(KEY_QR, true)
 
     fun setQrDetectEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_QR, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_QR, enabled).apply()
     }
 
     /** The QR highlight color as stored ("#RRGGBB"), for display in the
      *  settings field. */
     fun getQrColorHex(context: Context): String =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getString(KEY_QR_COLOR, QR_COLOR_DEFAULT) ?: QR_COLOR_DEFAULT
+        prefs(context).getString(KEY_QR_COLOR, QR_COLOR_DEFAULT) ?: QR_COLOR_DEFAULT
 
     /** The QR highlight color as a color int. Falls back to the default if
      *  the stored value somehow doesn't parse. */
@@ -366,14 +413,13 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
     fun setQrColorHex(context: Context, hex: String): String? {
         val normalized = "#" + hex.trim().removePrefix("#").uppercase()
         if (!normalized.matches(Regex("^#[0-9A-F]{6}$"))) return null
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_QR_COLOR, normalized).apply()
+        prefs(context).edit().putString(KEY_QR_COLOR, normalized).apply()
         return normalized
     }
 
     /** Remember the last crop so it can be re-applied to a matching capture. */
     fun saveLastCrop(context: Context, rect: Rect, srcWidth: Int, srcHeight: Int) {
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        prefs(context).edit()
             .putInt(KEY_CROP_L, rect.left)
             .putInt(KEY_CROP_T, rect.top)
             .putInt(KEY_CROP_R, rect.right)
@@ -389,7 +435,7 @@ private const val KEY_SECTION_EXPANDED = "_expanded"
      * Returns null when nothing is stored or the dimensions don't match.
      */
     fun getLastCropFor(context: Context, srcWidth: Int, srcHeight: Int): Rect? {
-        val p = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val p = prefs(context)
         if (p.getInt(KEY_CROP_W, 0) != srcWidth || p.getInt(KEY_CROP_H, 0) != srcHeight) {
             return null
         }

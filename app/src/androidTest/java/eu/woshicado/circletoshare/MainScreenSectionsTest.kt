@@ -9,11 +9,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.materialswitch.MaterialSwitch
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -25,31 +24,10 @@ class MainScreenSectionsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context = instrumentation.targetContext
 
-    private var qrWas = true
-    private var buttonsWere: Boolean? = null
-    private var triggersWere = true
-    private var copyTextWas = false
+    @get:Rule
+    val kept = KeepPrefs()
 
-    @Before
-    fun remember() {
-        qrWas = Prefs.isQrDetectEnabled(context)
-        // (Stored or not: one of the tests is about what holds when not.)
-        buttonsWere = prefs().takeIf { it.contains("capture_more") }?.getBoolean("capture_more", false)
-        triggersWere = Prefs.isSectionExpanded(context, "triggers")
-        copyTextWas = Prefs.isCopyTextEnabled(context)
-    }
-
-    private fun prefs() = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
-
-    @After
-    fun restore() {
-        Prefs.setQrDetectEnabled(context, qrWas)
-        Prefs.setSectionExpanded(context, "triggers", triggersWere)
-        Prefs.setCopyTextEnabled(context, copyTextWas)
-        prefs().edit().apply {
-            buttonsWere?.let { putBoolean("capture_more", it) } ?: remove("capture_more")
-        }.commit()
-    }
+    private fun prefs() = kept.store
 
     private fun MainActivity.shows(id: Int) = findViewById<View>(id).visibility == View.VISIBLE
 

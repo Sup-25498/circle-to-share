@@ -1,6 +1,5 @@
 package eu.woshicado.circletoshare.crop
 
-import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -9,15 +8,16 @@ import android.util.DisplayMetrics
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import eu.woshicado.circletoshare.KeepPrefs
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.qr.QrCode
 import eu.woshicado.circletoshare.share.Delivery
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -25,6 +25,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -37,24 +38,20 @@ class CropScreenTest {
     private val context = instrumentation.targetContext
     private lateinit var screen: CropScreen
 
-    private var qrDetectionWasOn = true
-    // The remembered crop as found (its six keys), to put back.
-    private var lastCropWas: Map<String, Int> = emptyMap()
-    private var copyTextWasOn = false
+    // (Among them the remembered crop: a test that saves or starts a
+    // sideways run remembers its selection.)
+    @get:Rule
+    val kept = KeepPrefs()
 
     @Before
     fun setUp() = onMain {
         // Off for these tests: setBitmap would otherwise start a real scan of
         // the blank bitmap on a worker thread, whose (empty) result arrives
         // whenever it arrives and replaces any codes a test has put in.
-        qrDetectionWasOn = Prefs.isQrDetectEnabled(context)
         Prefs.setQrDetectEnabled(context, false)
         // On for these tests (off by default): the bar with Copy text is the
         // fuller one, and the tests of its fit and its button expect it.
-        copyTextWasOn = Prefs.isCopyTextEnabled(context)
         Prefs.setCopyTextEnabled(context, true)
-        lastCropWas = context.getSharedPreferences("cts", Context.MODE_PRIVATE).all
-            .filterKeys { it.startsWith("last_crop_") }.mapValues { it.value as Int }
         // At the font and display size the device came with: a phone's
         // width, as these tests take it. (The fit at others is tried with
         // widths of its own: see buttonsWhoseLabelsDoNotFit_….)
@@ -78,23 +75,6 @@ class CropScreenTest {
             View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY)
         )
         screen.layout(0, 0, width, HEIGHT)
-    }
-
-    @After
-    fun tearDown() {
-        Prefs.setQrDetectEnabled(context, qrDetectionWasOn)
-        Prefs.setCopyTextEnabled(context, copyTextWasOn)
-        // (A test that started a sideways run remembered its selection as
-        // the last crop: back to what was remembered before.)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().apply {
-            for (key in listOf("last_crop_l", "last_crop_t", "last_crop_r", "last_crop_b", "last_crop_w", "last_crop_h")) {
-                lastCropWas[key]?.let { putInt(key, it) } ?: remove(key)
-            }
-        }.apply()
-        // That write is asynchronous, and the test process is killed when the
-        // run ends: flush, so the restored setting is what stays on the
-        // device. ("cts" is the app's preference file — see Prefs.)
-        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().commit()
     }
 
     @Test
@@ -164,19 +144,9 @@ class CropScreenTest {
 
         onMain { findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900)) }
         assertEquals("the same button, the same words", context.getString(R.string.action_save), save.text.toString())
-        // Delivering remembers the crop for this capture size, which would
-        // turn the other tests' hint into the restore offer: put back what
-        // was remembered before. ("cts" is the app's preference file.)
-        val prefs = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
-        val remembered = prefs.all.filterKeys { it.startsWith("last_crop_") }
-        try {
-            onMain { save.performClick() }
-        } finally {
-            prefs.edit().apply {
-                prefs.all.keys.filter { it.startsWith("last_crop_") }.forEach { remove(it) }
-                remembered.forEach { (key, value) -> putInt(key, value as Int) }
-            }.commit()
-        }
+        // (Delivering remembers the crop for this capture size: put back
+        // after the test, see KeepPrefs.)
+        onMain { save.performClick() }
         assertEquals(Delivery.SAVE to Rect(100, 200, 600, 900), delivered.last())
         assertEquals("saving doesn't close", 0, cancelled)
 
@@ -994,7 +964,10 @@ class CropScreenTest {
             moreButton(R.string.action_capture_more_above)
 
         onMain { screen.setDelivering(true) }
-        onMain { buttons.forEach { it.performClick() } }
+        // (Disabled, as screen readers say: neither a tap nor a screen
+        // reader's click does anything.)
+        assertEquals(emptyList<View>(), buttons.filter { it.isEnabled })
+        onMain { buttons.forEach { it.performAccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, null) } }
         assertEquals(emptyList<Delivery>(), delivered)
         assertEquals(emptyList<CropScreen.More>(), asked)
 

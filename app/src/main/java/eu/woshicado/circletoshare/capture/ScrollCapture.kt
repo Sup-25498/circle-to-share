@@ -16,6 +16,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.crop.SnapBounds
+import eu.woshicado.circletoshare.dp
 import java.util.concurrent.Executors
 
 /**
@@ -642,7 +643,7 @@ internal class ScrollCapture(
         fun findSidewaysAreas(service: ScreenshotAccessibilityService): List<Rect> {
             val display = displayBounds(service)
             val minWidth = display.width() / 4
-            val minHeight = (48 * service.resources.displayMetrics.density).toInt()
+            val minHeight = service.dp(48)
             val areas = ArrayList<Rect>()
             for (node in sidewaysNodes(service, null)) {
                 val r = Rect().also { node.getBoundsInScreen(it) }
