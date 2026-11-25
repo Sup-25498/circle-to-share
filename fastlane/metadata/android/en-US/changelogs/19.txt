@@ -1,0 +1,7 @@
+* Save folder is selectable via Android SAF
+* Per-app save folder functionality (off by default)
+* Save/Share/Copy asynchronous
+* Save notices queue
+* Support language selection
+* Add German translations
+* Prepare for RTL language support (such as arabic); some rtl fixes
