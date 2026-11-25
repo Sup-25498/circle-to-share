@@ -558,7 +558,11 @@ class CropScreenTest {
         assertEquals(View.VISIBLE, findCropView(screen)!!.visibility)
     }
 
-    private fun moreButton(label: Int): TextView = findText(screen, context.getString(label))!!
+    /** A "More" button, by its label (or, showing its icon alone where the
+     *  row is short of room, by what it says to screen readers). */
+    private fun moreButton(label: Int): TextView = context.getString(label).let {
+        (findText(screen, it) ?: findByDescription(screen, it)) as TextView
+    }
 
     /** Whether [button] is on screen: itself and the row it is in. */
     private fun shows(button: View): Boolean =
@@ -745,6 +749,37 @@ class CropScreenTest {
         assertTrue(hint!!.isClickable)
         onMain { hint.performClick() }
         assertEquals(Rect(10, 20, 300, 400), crop.getCropRect())
+    }
+
+    @Test
+    fun theButtonLeftAfterAStep_staysWhereItWas() {
+        val above = moreButton(R.string.action_capture_more_above)
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onCaptureSideways = {}
+            layOut()
+        }
+        val row = above.parent as View
+        val before = row.left + above.left
+        // The grown picture's tool: one way left, and no way sideways.
+        onMain {
+            screen.onCaptureSideways = null
+            screen.captureMoreChoices = setOf(CropScreen.More.ABOVE)
+            layOut()
+        }
+        assertTrue(shows(above))
+        assertEquals(before, row.left + above.left)
+    }
+
+    @Test
+    fun inARightToLeftLanguage_theToolIsRightToLeft_whateverItsWindow() = onMain {
+        val arabic = Configuration(context.resources.configuration).apply {
+            setLocale(java.util.Locale.forLanguageTag("ar"))
+            fontScale = 1f
+            densityDpi = DisplayMetrics.DENSITY_DEVICE_STABLE
+        }
+        val tool = CropScreen(context.createConfigurationContext(arabic))
+        assertEquals(View.LAYOUT_DIRECTION_RTL, tool.layoutDirection)
     }
 
     @Test

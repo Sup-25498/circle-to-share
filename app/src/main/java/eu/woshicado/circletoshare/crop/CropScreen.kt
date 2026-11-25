@@ -151,6 +151,11 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private val noticeGone = Runnable { noticeView.visibility = View.GONE }
 
     init {
+        // Right to left as the language it speaks is (see Language), not as
+        // the window it is in: the assistant's window follows the system's
+        // language, and the bubble's tool would be laid out the other way
+        // round from the assistant's it takes over from for "Capture more".
+        layoutDirection = resources.configuration.layoutDirection
         cropView.visibility = View.GONE
         cropView.onZoomChanged = { areaPicker.invalidate() }
         cropView.listener = object : CropOverlayView.Listener {
@@ -313,6 +318,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
         }
         sideRow = ActionRow(context).apply {
             visibility = View.GONE
+            // Left and right are the screen's: not swapped in a
+            // right-to-left language.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
             addAction(moreLeftButton)
             addAction(moreRightButton)
             matchWidths(moreLeftButton, moreRightButton)
@@ -575,12 +583,15 @@ class CropScreen(context: Context) : FrameLayout(context) {
         moreAboveButton.visibility = if (More.ABOVE in choices) View.VISIBLE else View.INVISIBLE
         moreBelowButton.visibility = if (More.BELOW in choices) View.VISIBLE else View.INVISIBLE
         // The way sideways is open while the picture has not grown yet; its
-        // place is kept after, like the other's (see above).
-        moreSidewaysButton.visibility = when {
-            onCaptureSideways == null || sidewaysUnavailable -> View.GONE
-            More.ABOVE in choices && More.BELOW in choices -> View.VISIBLE
-            else -> View.INVISIBLE
-        }
+        // place is kept after, like the other's (see above) — also in the
+        // tool that shows the grown picture, whose host offers no way
+        // sideways any more — and where nothing scrolls sideways.
+        moreSidewaysButton.visibility =
+            if (onCaptureSideways != null && !sidewaysUnavailable && More.ABOVE in choices && More.BELOW in choices) {
+                View.VISIBLE
+            } else {
+                View.INVISIBLE
+            }
         moreLeftButton.visibility = if (More.LEFT in choices) View.VISIBLE else View.INVISIBLE
         moreRightButton.visibility = if (More.RIGHT in choices) View.VISIBLE else View.INVISIBLE
         val shown = onCaptureMore != null && choices.isNotEmpty() &&
@@ -1276,6 +1287,15 @@ private class ActionRow(context: Context) : LinearLayout(context) {
 
     init {
         orientation = HORIZONTAL
+        // LEFT, not the default START: onMeasure widens the row after
+        // LinearLayout has measured it, and a row that starts on the right
+        // (right-to-left) would place its buttons that much too far right.
+        // (Their order still follows the layout direction.)
+        gravity = Gravity.LEFT
+        // Not lined up by their text: a pill showing its icon alone has none
+        // to go by, and a script with taller lines than its own (Arabic)
+        // would push the labeled pills down past the row's bottom edge.
+        isBaselineAligned = false
     }
 
     /** [measured] false: [button] is left out of judging the fit — it only
@@ -1390,8 +1410,11 @@ private class ActionRow(context: Context) : LinearLayout(context) {
     private fun applyItemLayout() {
         for (i in 0 until childCount) {
             val params = getChildAt(i).layoutParams as LayoutParams
-            // Stacked, each button is as wide as the widest of them.
+            // Stacked, each button is as wide as the widest of them; side by
+            // side, as tall as the tallest (a label in a script with taller
+            // lines makes its pill taller than one with its icon alone).
             params.width = if (stacked) LayoutParams.MATCH_PARENT else LayoutParams.WRAP_CONTENT
+            params.height = if (stacked) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
             params.marginStart = dp(ITEM_MARGIN_DP)
             params.marginEnd = dp(ITEM_MARGIN_DP)
             params.topMargin = if (stacked && i > 0) dp(STACK_GAP_DP) else 0

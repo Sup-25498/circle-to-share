@@ -119,6 +119,12 @@ android {
         generateLocaleConfig = true
     }
 
+    lint {
+        // A string a translation doesn't have yet falls back to English
+        // (values/): listed in the lint report, not a failed release build.
+        warning += "MissingTranslation"
+    }
+
     // TensorFlow Lite's native code for four ABIs, compressed in the APK (and
     // unpacked once at install): ~9 MB less to download.
     packaging {

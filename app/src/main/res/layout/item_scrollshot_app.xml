@@ -38,15 +38,19 @@
                 android:layout_height="36dp"
                 android:importantForAccessibility="no" />
 
+            <!-- Lined up by the row's direction, not the name's: in a
+                 right-to-left language, a Latin name sits by its icon too. -->
             <TextView
                 android:id="@+id/app_label"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:importantForAccessibility="no"
                 android:maxLines="2"
+                android:textAlignment="viewStart"
                 android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp" />
 
